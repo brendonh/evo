@@ -1,0 +1,1 @@
+erl -noshell -pa ebin -s evotest test -s init stop

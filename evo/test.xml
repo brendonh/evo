@@ -1,0 +1,8 @@
+<?xml version="1.0"?>
+<dog>
+  <name e:render="foo" e:data="woo">
+    <another e:something="bar">Hi?</another>
+    Grand Danois
+  </name>
+  Other stuff. <img src="foo.jpg"></img>
+</dog>
