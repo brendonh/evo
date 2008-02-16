@@ -5,4 +5,5 @@
     Grand Danois
   </name>
   Other stuff. <img src="foo.jpg"></img>
+  <again e:render="foo" e:data="woo" />
 </dog>

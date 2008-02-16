@@ -29,7 +29,7 @@ run(Filename, Module) ->
     end.
 
 really_run(Filename, Module, From) ->
-    put(callbackModule, Module),
+    put(callback_module, Module),
     {Stuff, _Misc}=xmerl_scan:file(Filename),
     try
         MoreStuff = xmerl:export([Stuff], ?MODULE),
@@ -48,14 +48,8 @@ really_run(Filename, Module, From) ->
 
 '#xml-inheritance#'() -> [].
 
-%% The '#text#' function is called for every text segment.
-
 '#text#'(Text) ->
     export_text(Text).
-
-
-%% The '#root#' tag is called when the entire structure has been
-%% exported. It does not appear in the structure itself.
 
 '#root#'(Data, Attrs, [], _E) ->
     Ver = case find_attribute(version, Attrs) of
@@ -102,7 +96,6 @@ find_evos(Attrs) ->
       Attrs).
 
 get_func(FuncName, [{FuncName,Value}|Handlers], none) ->
-    io:format("Found ~p: ~p~n", [FuncName, Value]),
     get_func(FuncName, Handlers, Value);
 get_func(FuncName, [{FuncName,_}|Handlers], Already) ->
     io:format("Extra ~p!~n", [FuncName]),
@@ -112,21 +105,31 @@ get_func(FuncName, [_|Handlers], Whatever) ->
 get_func(_, [], Whatever) ->
     Whatever.
 
-apply_evos(Attrs, Data) ->
+get_data(Handlers) ->
+    case get_func("data", Handlers, none) of
+        none -> none;
+        DataName ->
+            case get({data, DataName}) of
+                undefined ->
+                    DataFuncName = list_to_atom("evo_data_" ++ DataName),
+                    CallbackModule = get(callback_module),
+                    Value = CallbackModule:DataFuncName(),
+                    put({data, DataName}, Value),
+                    Value;
+                Value -> 
+                    Value
+            end
+    end.
+
+apply_evos(Attrs, OldData) ->
     {Handlers, Others} = find_evos(Attrs),
-    io:format("~p / ~p~n", [Handlers, Others]),
 
-    DataFunc = get_func("data", Handlers, none),
-    io:format("Data: ~p~n", [DataFunc]),
-
-    {Data, Others}.
-
-    %%lists:map(fun(H) -> apply_evo(H, Data) end, Handlers).
-
-%% ----------------------------------------------------------- %%
-%% Evo API
-
-evo_render(FuncName) ->
-    io:format("Render: ~p~n", [FuncName]),
-    M = get(callbackModule),
-    M:FuncName().
+    case get_func("render", Handlers, none) of
+        none -> 
+            {OldData, Others};
+        RenderFunc ->
+            RenderFuncName = list_to_atom("evo_render_" ++ RenderFunc),
+            Data = get_data(Handlers),
+            CallbackModule = get(callback_module),
+            {[OldData, CallbackModule:RenderFuncName(Data)], Others}
+    end.
