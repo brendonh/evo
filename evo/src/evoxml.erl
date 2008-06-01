@@ -8,8 +8,7 @@ parse(XML, From) ->
     put(callback_module, From),
     XML2 = skip_whitespace(XML),
     XML3 = absorb_typeDecl(XML2),
-    {MainTag, XML4} = start_tag(XML3),
-    tag_body(XML4, MainTag),
+    parse_tag(XML3),
     From ! done.
 
 absorb_typeDecl(XML) ->
@@ -25,14 +24,7 @@ absorb_unhandledTag(Start, End, XML) ->
             XML
     end.
 
-
 parse_tag(XML) ->
-    XML2 = skip_whitespace(XML),
-    {TagName, XML3} = start_tag(XML2),
-    tag_body(XML3, TagName).
-
-
-start_tag(XML) ->
     XML2 = skip_whitespace(XML),
     case XML2 of
         [$<|Rest] ->
@@ -40,7 +32,11 @@ start_tag(XML) ->
             get(callback_module) ! {tag_start, Name},
             EvenMore = absorb_attrs(More),
             case skip_whitespace(EvenMore) of
-                [$>|Etc] -> {Name, Etc};
+                [$/,$>|Etc] ->
+                    get(callback_module) ! {tag_end, Name},
+                    Etc;
+                [$>|Etc] -> 
+                    tag_body(Etc, Name);
                 Erk -> erlang:error({"Missing closing bracket", Erk})
             end;
         _ -> false

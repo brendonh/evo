@@ -9,6 +9,6 @@
     Grand Danois
   </name>
   Other stuff. <img src="foo.jpg"></img>
-  <again e:render="foo" e:data="woo"></again>
+  <again e:render="foo" e:data="woo"/>
   你好啊
 </dog>
