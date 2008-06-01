@@ -1,7 +1,11 @@
 <?xml version="1.0"?>
 <dog>
-  <name e:render="foo" e:data="woo">
+  <name e:data="woo">
     <another e:something="bar">Hi?</another>
+    <row name="hello" e:dataFunc="foreach">
+      <one>Hi</one>
+      <two>Yay</two>
+    </row>
     Grand Danois
   </name>
   Other stuff. <img src="foo.jpg"></img>
