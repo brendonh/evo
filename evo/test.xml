@@ -1,5 +1,5 @@
-<?xml version="1.0"?>
-<dog>
+<?xml version="1.0?" encoding="UTF-8"?>
+<dog name="Ted" breed="Unknown" sentence="你好啊">
   <name e:data="woo">
     <another e:something="bar">Hi?</another>
     <row name="hello" e:dataFunc="foreach">
@@ -9,5 +9,6 @@
     Grand Danois
   </name>
   Other stuff. <img src="foo.jpg"></img>
-  <again e:render="foo" e:data="woo" />
+  <again e:render="foo" e:data="woo"></again>
+  你好啊
 </dog>

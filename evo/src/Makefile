@@ -9,7 +9,7 @@ VPATH = ../ebin
 
 ERL = erl -boot start_clean
 
-MODS = evo evotest
+MODS = utf8 evoxml evo evotest
 
 all: compile
 

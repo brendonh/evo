@@ -4,7 +4,7 @@
 
 test() ->
     io:format("Go!~n"),
-    io:format("Got: ~s~n", [evo:run("test.xml", ?MODULE)]).
+    io:format("Got: ~p~n", [evo:run("test.xml", ?MODULE)]).
 
 
 evo_data_woo() ->
