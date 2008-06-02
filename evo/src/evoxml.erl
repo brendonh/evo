@@ -68,17 +68,23 @@ tag_body(XML, TagName) ->
             XML3
     end.
  
-absorb_text(XML) -> absorb_text(skip_whitespace(XML), []).
+absorb_text(XML) -> 
+    {AfterSkip, PrefixWS} = skip_whitespace2(XML),
+    absorb_text(AfterSkip, [], PrefixWS).
 
-absorb_text([$<|_Rest]=XML, []) -> 
+absorb_text([$<|_Rest]=XML, [], _) -> 
     XML;
-absorb_text([$<|_Rest]=XML, Buffer) -> 
-    get(callback_module) ! {text, lists:reverse(skip_whitespace(Buffer))},
+absorb_text([$<|_Rest]=XML, Buffer, PWS) -> 
+    {Buffer2, SWS} = skip_whitespace2(Buffer),
+    get(callback_module) ! {text, lists:concat([space_or_not(PWS), lists:reverse(Buffer2), space_or_not(SWS)])},
     XML;
-absorb_text([First|Rest], Buffer) -> 
-    absorb_text(Rest, [First|Buffer]);
-absorb_text([], _Buffer) ->
+absorb_text([First|Rest], Buffer, PWS) -> 
+    absorb_text(Rest, [First|Buffer], PWS);
+absorb_text([], _Buffer, _) ->
     erlang:error("Hit EOF while reading text").
+
+space_or_not(true) -> " ";
+space_or_not(false) -> "".
 
 absorb_attrs(XML) ->
     XML2 = skip_whitespace(XML),
@@ -195,3 +201,12 @@ skip_whitespace([$\r|Rest]) -> skip_whitespace(Rest);
 skip_whitespace([$\n|Rest]) -> skip_whitespace(Rest);
 skip_whitespace([$\t|Rest]) -> skip_whitespace(Rest);
 skip_whitespace(Rest) -> Rest.
+
+
+skip_whitespace2(Text) -> skip_whitespace2(Text, false).
+
+skip_whitespace2([32|Rest], _) -> skip_whitespace2(Rest, true);
+skip_whitespace2([$\r|Rest], _) -> skip_whitespace2(Rest, true);
+skip_whitespace2([$\n|Rest], _) -> skip_whitespace2(Rest, true);
+skip_whitespace2([$\t|Rest], _) -> skip_whitespace2(Rest, true);
+skip_whitespace2(Rest, Found) -> {Rest, Found}.
