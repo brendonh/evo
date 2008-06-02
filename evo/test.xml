@@ -1,7 +1,7 @@
 <?xml version="1.0?" encoding="UTF-8"?>
-<dog name="Ted" breed="Unknown">
+<dog name="Ted" breed="Unknown" e:data="ted.jpg">
   <name e:data="woo">
-    <another>Hi?</another>
+    <another e:render="data">Hi from </another>
     <row name="hello">
       <one hello="你好啊">Hi</one>
       <two>Yay</two>
@@ -10,7 +10,7 @@
 some other things.
   </name>
   Other stuff. 
-  <img src="foo.jpg" />
-  <again e:render="foo" e:data="woo"/>
+  <img><e:attr name="src" e:render="data" /></img>
+  <again e:render="data" e:data="woo" />
   你好啊
 </dog>

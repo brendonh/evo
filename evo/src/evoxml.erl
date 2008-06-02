@@ -1,15 +1,17 @@
 -module(evoxml).
 
--import(utf8, [from_binary/1]).
-
 -export([parse/2]).
 
 parse(XML, From) ->
     put(callback_module, From),
     XML2 = skip_whitespace(XML),
     XML3 = absorb_typeDecl(XML2),
-    parse_tag(XML3),
-    From ! done.
+    XML4 = parse_tag(XML3),
+    case skip_whitespace(XML4) of
+        [] -> From ! done;
+        false -> erlang:error("No top-level tag found");
+        Stuff -> erlang:error({"Junk after document end", Stuff})
+    end.
 
 absorb_typeDecl(XML) ->
     absorb_unhandledTag("<?xml", "?>", XML).
@@ -94,12 +96,21 @@ absorb_attr(XML) ->
             case XML3 of
                 [$=|XML4] ->
                     {Value, XML5} = absorb_attrVal(XML4),
-                    get(callback_module) ! {attr, {Name, Value}},
+                    NSAttr = split_attrname(Name),
+                    get(callback_module) ! {attr, {NSAttr, Value}},
                     XML5;
                 _ -> erlang:error({"Missing = after name", Name, XML3})
             end
     end.
 
+
+split_attrname(Name) ->
+    case string:tokens(Name, ":") of
+        [Attr] -> {none, list_to_atom(Attr)};
+        [NS, Attr] -> {list_to_atom(NS), list_to_atom(Attr)};
+        _ -> erlang:error({"Can't parse attribute namespace", Name})
+    end.
+            
 
 absorb_name([First|Rest]) ->
     case is_name_start(First) of
