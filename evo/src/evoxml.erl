@@ -75,7 +75,7 @@ absorb_text([$<|_Rest]=XML, Buffer) ->
     XML;
 absorb_text([First|Rest], Buffer) -> 
     absorb_text(Rest, [First|Buffer]);
-absorb_text([], Buffer) ->
+absorb_text([], _Buffer) ->
     erlang:error("Hit EOF while reading text").
 
 absorb_attrs(XML) ->
@@ -101,7 +101,7 @@ absorb_attr(XML) ->
     end.
 
 
-absorb_name([First|Rest]=XML) ->
+absorb_name([First|Rest]) ->
     case is_name_start(First) of
         true -> absorb_name(Rest, [First]);
         false -> false
