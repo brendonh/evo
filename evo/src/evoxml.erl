@@ -76,7 +76,9 @@ absorb_text([$<|_Rest]=XML, [], _) ->
     XML;
 absorb_text([$<|_Rest]=XML, Buffer, PWS) -> 
     {Buffer2, SWS} = skip_whitespace2(Buffer),
-    get(callback_module) ! {text, lists:concat([space_or_not(PWS), lists:reverse(Buffer2), space_or_not(SWS)])},
+    get(callback_module) ! {text, lists:concat([space_or_not(PWS),
+                                                lists:reverse(Buffer2), 
+                                                space_or_not(SWS)])},
     XML;
 absorb_text([First|Rest], Buffer, PWS) -> 
     absorb_text(Rest, [First|Buffer], PWS);
