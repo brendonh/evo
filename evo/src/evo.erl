@@ -35,8 +35,10 @@ really_run(Filename, Module, From) ->
     Self = self(),
     spawn(fun() -> evoxml:parse(UTF32, Self) end),
     FinalState = watch_parsing(#state{}),
-    [TopTag] = FinalState#state.buffer,
-    Pretty = indenticate(TopTag),
+    TopTags = FinalState#state.buffer,
+    Pretty = lists:flatten(lists:foldl(
+               fun(Elem, InAcc) -> [indenticate(Elem), $\n, InAcc] end,
+               [], TopTags)),
     {ok, Output} = to_binary(Pretty),
     From ! {result, Output}.
 
@@ -66,6 +68,9 @@ watch_parsing(State) ->
             %{ok, BinVal} = to_binary(Text),
             %io:format("~s\"~s\"~n", [debug_spaces(State), BinVal]),
             watch_parsing(State#state{buffer=[Text|State#state.buffer]});
+
+        {unhandled_tag, {Tag}} ->
+            watch_parsing(State#state{buffer=[Tag|State#state.buffer]});
 
         {tag_end, _} ->
             Result = emitTag(State),
