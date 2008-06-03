@@ -1,16 +1,16 @@
 <?xml version="1.0?" encoding="UTF-8"?>
 <dog name="Ted" breed="Unknown" e:data="ted.jpg">
   <name e:data="woo">
-    <another e:render="data">Hi from </another>
+    <another e:render="data">Hi from <empty /> something </another>
     <row name="hello">
-      <one hello="你好啊">Hi</one>
+      <one hello="hi">Hi</one>
       <two>Yay</two>
     </row>
     Grand Danois and also
 some other things.
   </name>
-  Other stuff. 
+  Other stuff. <a>1</a><b></b>
   <img><e:attr name="src" e:render="data" /></img>
   <again e:render="data" e:data="woo" />
-  你好啊
+  hi
 </dog>

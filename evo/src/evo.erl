@@ -29,7 +29,7 @@ really_run(Filename, Module, From) ->
     FinalState = watch_parsing(#state{}),
     TopTags = FinalState#state.buffer,
     Pretty = lists:flatten(lists:foldl(
-               fun(Elem, InAcc) -> [indenticate(Elem), $\n, InAcc] end,
+               fun(Elem, InAcc) -> [indenticate(Elem)|InAcc] end,
                [], TopTags)),
     {ok, Output} = to_binary(Pretty),
     From ! {result, Output}.
@@ -50,7 +50,7 @@ watch_parsing(State) ->
         {attr, {{e, render}, Value}} ->
             watch_parsing(State#state{render=Value});
 
-        {attr, {{e, Attr}, Value}} ->
+        {attr, {{e, Attr}, _}} ->
             erlang:error({"Unknown evo attribute", Attr});
 
         {attr, {NSAttr, Value}} ->
@@ -126,13 +126,63 @@ flatten_attrName({NS, Attr}) -> lists:flatten([atom_to_list(NS), ":", atom_to_li
     
 
 indenticate(TagSoup) ->
-    lists:flatten(indenticate(TagSoup, 0)).
+    PF = partial_flatten(TagSoup),
+    lists:flatten(indent(PF, 0)).
 
-indenticate({Tag, Content, End}, Indent) ->
-    [spaces(Indent), Tag, $\n, 
-     lists:map(fun(L) -> [indenticate(L, Indent+1), $\n] end, Content),
-     spaces(Indent), End];
-indenticate(Other, Indent) -> [spaces(Indent), newlines_to_spaces(Other)].
+partial_flatten({Tag, Content, End}) ->
+    FlatTag = lists:flatten(Tag),
+    FlatEnd = lists:flatten(End),
+    Inside = partial_flatten(Content),
+    case Inside of
+        [C1|_] when is_integer(C1) and C1 =:= $< -> 
+            lists:concat([FlatTag, Inside, FlatEnd]);
+        _ ->
+            {FlatTag, Inside, FlatEnd}
+    end;
+
+partial_flatten([C|_]=Text) when is_integer(C) ->
+    newlines_to_spaces(Text);
+
+partial_flatten(Stuff) when is_list(Stuff) ->
+    Before = lists:map(fun partial_flatten/1, Stuff),
+    {After, AllText} = join_text(Before),
+    Flat = lists:flatten(After),
+    case AllText andalso length(Flat) < 80 of
+        true -> Flat;
+        false -> After
+    end.
+
+indent({Tag, [C1|_]=Content, End}, Indent) when is_integer(C1) ->
+    Stripped = string:strip(Content),
+    TotalLen = length(Tag) + length(Stripped) + length(End),
+    case TotalLen < 40 of
+        true ->
+            [spaces(Indent), Tag, Stripped, End, $\n];
+        false ->
+            [spaces(Indent), Tag, integer_to_list(TotalLen), $\n,
+             spaces(Indent+1), Stripped, $\n,
+             spaces(Indent), End, $\n]
+    end;
+indent({Tag, Content, End}, Indent) ->
+    [spaces(Indent), Tag, $\n,
+     lists:map(fun(L) -> indent(L, Indent+1) end, Content),
+     spaces(Indent), End, $\n];
+indent([C1|_]=Line, Indent) when is_integer(C1) ->
+    [spaces(Indent), string:strip(Line), $\n];
+indent(Lines, Indent) ->
+    lists:map(fun(L) -> indent(L, Indent+1) end, Lines).
+     
+
+join_text(Bits) ->
+    {Text, AllText} = lists:foldl(fun maybe_join/2, {[], true}, Bits),
+    {lists:reverse(Text), AllText}.
+      
+maybe_join([C1|_]=Text, {[[C2|_]=Last|Rest], All}) when is_integer(C1), is_integer(C2) ->
+    {[lists:concat([Last, Text])|Rest], All};
+maybe_join([C1|_]=Text, {[], All}) when is_integer(C1) ->
+    {[Text], All};
+maybe_join(Something, {Acc, _}) ->
+    {[Something|Acc], false}.
 
 
 newlines_to_spaces(Bytes) -> lists:reverse(newlines_to_spaces(Bytes, [])).
