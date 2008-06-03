@@ -1,0 +1,9 @@
+-record(state,{
+  tag=none,
+  render=none,
+  data=none,
+  level=0,
+  attrs=[],
+  buffer=[],
+  stack=[]
+}).

@@ -159,12 +159,12 @@ indent({Tag, [C1|_]=Content, End}, Indent) when is_integer(C1) ->
         true ->
             [spaces(Indent), Tag, Stripped, End, $\n];
         false ->
-            [spaces(Indent), Tag, integer_to_list(TotalLen), $\n,
+            [spaces(Indent), Tag, $\n,
              spaces(Indent+1), Stripped, $\n,
-             spaces(Indent), End, $\n]
+             spaces(Indent), End]
     end;
 indent({Tag, Content, End}, Indent) ->
-    [spaces(Indent), Tag, $\n,
+    [spaces(Indent), Tag,
      lists:map(fun(L) -> indent(L, Indent+1) end, Content),
      spaces(Indent), End, $\n];
 indent([C1|_]=Line, Indent) when is_integer(C1) ->
@@ -194,4 +194,4 @@ newlines_to_spaces([C|Bytes], Buffer) ->
 newlines_to_spaces([], Buffer) ->
     Buffer.
 
-spaces(Indent) -> string:chars(32, Indent*2).
+spaces(Indent) -> string:chars(32, Indent*2).     
