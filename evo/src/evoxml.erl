@@ -72,7 +72,7 @@ absorb_text(XML) ->
     {AfterSkip, PrefixWS} = skip_whitespace2(XML),
     absorb_text(AfterSkip, [], PrefixWS).
 
-absorb_text([$<|_Rest]=XML, [], _) -> 
+absorb_text([$<|_Rest]=XML, [], false) -> 
     XML;
 absorb_text([$<|_Rest]=XML, Buffer, PWS) -> 
     {Buffer2, SWS} = skip_whitespace2(Buffer),

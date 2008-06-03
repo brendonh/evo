@@ -9,8 +9,8 @@
     Grand Danois and also
 some other things.
   </name>
-  Other stuff. <a>1</a><b></b>
-  <img><e:attr name="src" e:render="data" /></img>
+  Other stuff. <a>1</a> <b></b> 
+  <img><e:attr name="src" e:render="data" /></img> <img><e:attr name="src" e:render="data" /></img>
   <again e:render="data" e:data="woo" />
   hi
 </dog>
