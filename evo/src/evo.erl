@@ -74,7 +74,7 @@ watch_parsing(State) ->
 
     end.
 
-emitTag(State) when State#state.tag =:= "e:attr" ->
+emitTag(#{tag={e,attr}}=State) ->
     Name = list_to_atom(proplists:get_value({none, name}, State#state.attrs)),
     Value = State#state.buffer,
     [Parent|Rest] = State#state.stack,
@@ -130,7 +130,7 @@ indenticate(TagSoup) ->
     Indented = indent(PF, 0),
     Flattened = lists:flatten(Indented),
     LineList = lists:map(fun erlang:tuple_to_list/1, Flattened),
-    string:join(lists:map(fun lists:flatten/1, LineList), "\n").
+    string:join(lists:map(fun lists:flatten/1, LineList), "\n") ++ [$\n].
 
 partial_flatten({Tag, Content, End}) ->
     FlatTag = lists:flatten(Tag),

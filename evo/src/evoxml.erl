@@ -31,7 +31,7 @@ parse_tag(XML) ->
     case XML2 of
         [$<|Rest] ->
             {Name, More} = absorb_name(Rest),
-            get(callback_module) ! {tag_start, Name},
+            get(callback_module) ! {tag_start, split_name(Name)},
             EvenMore = absorb_attrs(More),
             case skip_whitespace(EvenMore) of
                 [$/,$>|Etc] ->
@@ -104,15 +104,14 @@ absorb_attr(XML) ->
             case XML3 of
                 [$=|XML4] ->
                     {Value, XML5} = absorb_attrVal(XML4),
-                    NSAttr = split_attrname(Name),
-                    get(callback_module) ! {attr, {NSAttr, Value}},
+                    get(callback_module) ! {attr, {split_name(Name), Value}},
                     XML5;
                 _ -> erlang:error({"Missing = after name", Name, XML3})
             end
     end.
 
 
-split_attrname(Name) ->
+split_name(Name) ->
     case string:tokens(Name, ":") of
         [Attr] -> {none, list_to_atom(Attr)};
         [NS, Attr] -> {list_to_atom(NS), list_to_atom(Attr)};
