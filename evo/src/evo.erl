@@ -74,13 +74,16 @@ watch_parsing(State) ->
 
     end.
 
-emitTag(#{tag={e,attr}}=State) ->
+emitTag(#state{tag={e,attr}}=State) ->
     Name = list_to_atom(proplists:get_value({none, name}, State#state.attrs)),
     Value = State#state.buffer,
     [Parent|Rest] = State#state.stack,
     ParentAttrs2 = proplists:delete({none, Name}, Parent#state.attrs),
     NewParent = Parent#state{attrs=[{{none, Name}, Value}|ParentAttrs2]},
     {"", State#state{stack=[NewParent|Rest]}};
+
+emitTag(#state{tag={e,Tag}}) ->
+    erlang:error({"Unknown evo tag", Tag});
 
 emitTag(State) ->
     case lists:flatten(State#state.buffer) of
@@ -103,26 +106,26 @@ emitFullTag(State) ->
      State}.
 
 emitEmptyTag(State) ->
-    {[lists:flatten([$<, State#state.tag, 
+    {[lists:flatten([$<, flatten_name(State#state.tag), 
                      flatten_attrs(State#state.attrs),
                      " />"])],
      State}.
 
 openTag(State) ->
-    [$<, State#state.tag, flatten_attrs(State#state.attrs), $>].
+    [$<, flatten_name(State#state.tag), flatten_attrs(State#state.attrs), $>].
 
 closeTag(State) ->
-    [$<, $/, State#state.tag, $>].
+    [$<, $/, flatten_name(State#state.tag), $>].
 
 flatten_attrs([]) -> "";
 flatten_attrs(Attrs) ->
     " " ++ string:join(
-      lists:map(fun ({NSAttr, Value}) -> lists:flatten([flatten_attrName(NSAttr), $=, $", Value, $"]) end,
+      lists:map(fun ({NSAttr, Value}) -> lists:flatten([flatten_name(NSAttr), $=, $", Value, $"]) end,
                 Attrs),
       " ").
 
-flatten_attrName({none, Attr}) -> atom_to_list(Attr);
-flatten_attrName({NS, Attr}) -> lists:flatten([atom_to_list(NS), ":", atom_to_list(Attr)]).
+flatten_name({none, Attr}) -> atom_to_list(Attr);
+flatten_name({NS, Attr}) -> lists:flatten([atom_to_list(NS), ":", atom_to_list(Attr)]).
     
 
 indenticate(TagSoup) ->

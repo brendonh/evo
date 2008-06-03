@@ -10,6 +10,8 @@
 some other things.
   </name>
   Other stuff. <a>1</a><b>c</b><img><e:attr name="src" e:render="data" /></img> <img><e:attr name="src" e:render="data" /></img>
+  <html:d>Hello this is a much longer string which exceeds the 40 character limit.</html:d>
+  <html:e />
   <again e:render="data" e:data="woo" />
   hi
 </dog>
