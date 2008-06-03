@@ -127,7 +127,10 @@ flatten_attrName({NS, Attr}) -> lists:flatten([atom_to_list(NS), ":", atom_to_li
 
 indenticate(TagSoup) ->
     PF = partial_flatten(TagSoup),
-    lists:flatten(indent(PF, 0)).
+    Indented = indent(PF, 0),
+    Flattened = lists:flatten(Indented),
+    LineList = lists:map(fun erlang:tuple_to_list/1, Flattened),
+    string:join(lists:map(fun lists:flatten/1, LineList), "\n").
 
 partial_flatten({Tag, Content, End}) ->
     FlatTag = lists:flatten(Tag),
@@ -157,21 +160,24 @@ indent({Tag, [C1|_]=Content, End}, Indent) when is_integer(C1) ->
     TotalLen = length(Tag) + length(Stripped) + length(End),
     case TotalLen < 40 of
         true ->
-            [spaces(Indent), Tag, Stripped, End, $\n];
+            [{spaces(Indent), Tag, Stripped, End}];
         false ->
-            [spaces(Indent), Tag, $\n,
-             spaces(Indent+1), Stripped, $\n,
-             spaces(Indent), End]
+            [{spaces(Indent), Tag},
+             {spaces(Indent+1), Stripped},
+             {spaces(Indent), End}]
     end;
 indent({Tag, Content, End}, Indent) ->
-    [spaces(Indent), Tag,
+    [{spaces(Indent), Tag},
      lists:map(fun(L) -> indent(L, Indent+1) end, Content),
-     spaces(Indent), End, $\n];
+     {spaces(Indent), End}];
 indent([C1|_]=Line, Indent) when is_integer(C1) ->
-    [spaces(Indent), string:strip(Line), $\n];
+    Stripped = string:strip(Line),
+    case Stripped of
+        [] -> [];
+        _ -> [{spaces(Indent), Stripped}]
+    end;
 indent(Lines, Indent) ->
     lists:map(fun(L) -> indent(L, Indent+1) end, Lines).
-     
 
 join_text(Bits) ->
     {Text, AllText} = lists:foldl(fun maybe_join/2, {[], true}, Bits),
