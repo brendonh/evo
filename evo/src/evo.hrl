@@ -4,6 +4,8 @@
   data=none,
   level=0,
   attrs=[],
-  buffer=[],
-  stack=[]
+  %buffer=[],
+  %stack=[],
+  parent=none,
+  children=[]
 }).

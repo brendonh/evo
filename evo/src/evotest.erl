@@ -3,7 +3,6 @@
 -export([test/0, evo_data_woo/0, evo_render_foo/1]).
 
 test() ->
-    io:format("Go!~n"),
     io:format("~s~n", [evo:run("test.xml", ?MODULE)]).
 
 

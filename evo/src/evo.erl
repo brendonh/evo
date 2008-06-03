@@ -27,25 +27,24 @@ really_run(Filename, Module, From) ->
     Self = self(),
     spawn_link(fun() -> evoxml:parse(UTF32, Self) end),
     FinalState = watch_parsing(#state{}),
-    TopTags = FinalState#state.buffer,
+    TopTags = emitChildren(FinalState),
     Pretty = lists:flatten(lists:foldl(
                fun(Elem, InAcc) -> [indenticate(Elem)|InAcc] end,
                [], TopTags)),
     {ok, Output} = to_binary(Pretty),
-    From ! {result, Output}.
+    From ! {result, Output}. 
 
 watch_parsing(State) ->
     receive
 
         {tag_start, Name} ->
             NewState = #state{tag=Name,
-                              data=State#state.data, 
                               level=State#state.level+1, 
-                              stack=[State|State#state.stack]},
+                              parent=State},
             watch_parsing(NewState);
 
         {attr, {{e, data}, Value}} ->
-            watch_parsing(State#state{data=string:tokens(Value, " ")});
+            watch_parsing(State#state{data=eval(Value ++ ".")});
 
         {attr, {{e, render}, Value}} ->
             watch_parsing(State#state{render=Value});
@@ -57,59 +56,87 @@ watch_parsing(State) ->
             watch_parsing(State#state{attrs=[{NSAttr, Value}|State#state.attrs]});
 
         {text, Text} ->
-            watch_parsing(State#state{buffer=[Text|State#state.buffer]});
+            watch_parsing(State#state{children=[Text|State#state.children]});
 
         {unhandled_tag, {Tag}} ->
-            watch_parsing(State#state{buffer=[Tag|State#state.buffer]});
+            watch_parsing(State#state{children=[Tag|State#state.children]});
 
         {tag_end, _} ->
-            State2 = applyRender(State),
-            {Result, NewState} = emitTag(State2),
-            [NextState|_Rest] = NewState#state.stack,
-            watch_parsing(NextState#state{buffer=[Result|NextState#state.buffer]});
+            Parent = State#state.parent,
+            watch_parsing(Parent#state{children=[State|Parent#state.children]});
 
         done ->
-            io:format("Done.~n"),
             State
 
     end.
 
+eval(String) ->
+    {ok,Scanned,_} = erl_scan:string(String),
+    {ok,Parsed} = erl_parse:parse_exprs(Scanned),
+    B = erl_eval:add_binding('S', fun atom_to_list/1, erl_eval:new_bindings()), 
+    {value, Result, Env2} = erl_eval:exprs(Parsed,B),
+    Result.
+
+emitTag(Text) when is_list(Text) ->
+    {Text, none};
+
+emitTag(Int) when is_integer(Int) ->
+    {integer_to_list(Int), none};
+
+emitTag(Atom) when is_atom(Atom) ->
+    {atom_to_list(Atom), none};
+
 emitTag(#state{tag={e,attr}}=State) ->
     Name = list_to_atom(proplists:get_value({none, name}, State#state.attrs)),
-    Value = State#state.buffer,
-    [Parent|Rest] = State#state.stack,
+    Value = State#state.children,
+    Parent = State#state.parent,
     ParentAttrs2 = proplists:delete({none, Name}, Parent#state.attrs),
     NewParent = Parent#state{attrs=[{{none, Name}, Value}|ParentAttrs2]},
-    {"", State#state{stack=[NewParent|Rest]}};
+    {"", State#state{parent=NewParent}};
+
+emitTag(#state{tag={e,inv}}=State) ->
+    NewState = applyRender(State),
+    {lists:reverse(emitChildren(NewState)), none};
 
 emitTag(#state{tag={e,Tag}}) ->
     erlang:error({"Unknown evo tag", Tag});
 
-emitTag(State) ->
-    case lists:flatten(State#state.buffer) of
+emitTag(#state{render=none}=State) ->
+    {renderTag(State), State};
+
+emitTag(#state{}=State) ->
+    NewState = applyRender(State),
+    emitTag(NewState).
+
+
+emitChildren(State) ->
+    lists:map(fun(S) -> {O, _} = emitTag(S), O end,
+              State#state.children).
+
+
+renderTag(State) ->
+    case lists:flatten(State#state.children) of
         [] -> emitEmptyTag(State);
         _ -> emitFullTag(State)
     end.
-
 
 applyRender(State) when State#state.render =:= none ->
     State;
 applyRender(State) ->
     Render = list_to_atom(State#state.render),
-    evorender:Render(State).
+    NewState = evorender:Render(State),
+    NewState.
 
 
 emitFullTag(State) ->
-    {{openTag(State),
-      lists:reverse(State#state.buffer),
-      closeTag(State)},
-     State}.
+    {openTag(State),
+     lists:reverse(emitChildren(State)),
+     closeTag(State)}.
 
 emitEmptyTag(State) ->
-    {[lists:flatten([$<, flatten_name(State#state.tag), 
-                     flatten_attrs(State#state.attrs),
-                     " />"])],
-     State}.
+    [lists:flatten([$<, flatten_name(State#state.tag), 
+                    flatten_attrs(State#state.attrs),
+                    " />"])].
 
 openTag(State) ->
     [$<, flatten_name(State#state.tag), flatten_attrs(State#state.attrs), $>].
@@ -126,7 +153,7 @@ flatten_attrs(Attrs) ->
 
 flatten_name({none, Attr}) -> atom_to_list(Attr);
 flatten_name({NS, Attr}) -> lists:flatten([atom_to_list(NS), ":", atom_to_list(Attr)]).
-    
+
 
 indenticate(TagSoup) ->
     PF = partial_flatten(TagSoup),
@@ -158,6 +185,7 @@ partial_flatten(Stuff) when is_list(Stuff) ->
         false -> After
     end.
 
+
 indent({Tag, [C1|_]=Content, End}, Indent) when is_integer(C1) ->
     Stripped = string:strip(Content),
     TotalLen = length(Tag) + length(Stripped) + length(End),
@@ -185,7 +213,7 @@ indent(Lines, Indent) ->
 join_text(Bits) ->
     {Text, AllText} = lists:foldl(fun maybe_join/2, {[], true}, Bits),
     {lists:reverse(Text), AllText}.
-      
+
 maybe_join([C1|_]=Text, {[[C2|_]=Last|Rest], All}) when is_integer(C1), is_integer(C2) ->
     {[lists:concat([Last, Text])|Rest], All};
 maybe_join([C1|_]=Text, {[], All}) when is_integer(C1) ->
