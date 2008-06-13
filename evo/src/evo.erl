@@ -88,12 +88,13 @@ emitTag(Atom) when is_atom(Atom) ->
     {atom_to_list(Atom), none};
 
 emitTag(#state{tag={e,attr}}=State) ->
-    Name = list_to_atom(proplists:get_value({none, name}, State#state.attrs)),
-    Value = State#state.children,
-    Parent = State#state.parent,
+    NewState = applyRender(State),
+    Name = list_to_atom(proplists:get_value({none, name}, NewState#state.attrs)),
+    Value = emitChildren(NewState),
+    Parent = NewState#state.parent,
     ParentAttrs2 = proplists:delete({none, Name}, Parent#state.attrs),
     NewParent = Parent#state{attrs=[{{none, Name}, Value}|ParentAttrs2]},
-    {"", State#state{parent=NewParent}};
+    {"", NewState#state{parent=NewParent}};
 
 emitTag(#state{tag={e,inv}}=State) ->
     NewState = applyRender(State),
@@ -111,8 +112,29 @@ emitTag(#state{}=State) ->
 
 
 emitChildren(State) ->
-    lists:map(fun(S) -> {O, _} = emitTag(S), O end,
-              State#state.children).
+    {_, Children} = emitChildren(State, true),
+    Children.
+
+emitChildren(State, true) ->
+    lists:foldl(
+      fun(S, {Parent, Children}) ->
+              case S of
+                  #state{} ->
+                      NS = S#state{parent=Parent},
+                      {Child, NS2} = emitTag(NS),
+                      case NS2 of
+                          none ->
+                              {Parent, [Child|Children]};
+                          _ ->
+                              {NS2#state.parent, [Child|Children]}
+                      end;
+                  _ ->
+                      {Child, _} = emitTag(S),
+                      {Parent, [Child|Children]}
+              end
+      end,
+      {State, []},
+      lists:reverse(State#state.children)).
 
 
 renderTag(State) ->
@@ -129,9 +151,10 @@ applyRender(State) ->
     NewState.
 
 emitFullTag(State) ->
-    {openTag(State),
-     lists:reverse(emitChildren(State)),
-     closeTag(State)}.
+    {NewState, Children} = emitChildren(State, true),
+    {openTag(NewState),
+     lists:reverse(Children),
+     closeTag(NewState)}.
 
 emitEmptyTag(State) ->
     [lists:flatten([$<, flatten_name(State#state.tag), 

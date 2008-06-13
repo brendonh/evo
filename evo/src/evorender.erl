@@ -57,6 +57,8 @@ eval(String, OldData) ->
 set_parent(Text, _) when is_list(Text) -> Text;
 set_parent(State, Parent) ->
     NewChildren = lists:map(fun(C) -> set_parent(C, State) end,
-                            State#state.children),
-    State#state{id=evo:new_id(), parent=Parent, children=NewChildren}.
+                            State#state.children),       
+    ID = evo:new_id(),
+    evo:put_cache(ID, evo:get_cache(State#state.id)),
+    State#state{id=ID, parent=Parent, children=NewChildren}.
 
