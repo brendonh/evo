@@ -7,7 +7,7 @@
       * <item e:render="data">Value: </item>
     </list>
     <e:inv e:data="what">
-      Shhhh! <a><e:attr name="href" e:render="data" /></a>
+      Shhhh! <a><e:attr name="href">hooray</e:attr></a>
       <e:inv e:render="data" e:dataExp="string:copies(S('hi'), 5)" />
     </e:inv>
 </dog>
