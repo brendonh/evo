@@ -1,11 +1,10 @@
 -record(state,{
+  id,
   tag=none,
   render=none,
-  data=none,
+  dataExpression=none,
   level=0,
   attrs=[],
-  %buffer=[],
-  %stack=[],
   parent=none,
   children=[]
 }).

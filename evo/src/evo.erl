@@ -1,13 +1,13 @@
 -module(evo).
 
 -import (utf8, [from_binary/1, to_binary/1]).
--export([run/2]).
+-export([run/3, new_id/0, get_cache/1, put_cache/2]).
 
 -include("evo.hrl").
 
-run(Filename, Module) ->
+run(Filename, InitialData, Module) ->
     Self = self(),
-    spawn_link(fun() -> really_run(Filename, Module, Self) end),
+    spawn_link(fun() -> really_run(Filename, InitialData, Module, Self) end),
     receive
         {result, R} ->
             R;
@@ -19,14 +19,17 @@ run(Filename, Module) ->
             none
     end.
 
-really_run(Filename, Module, From) ->
+really_run(Filename, InitialData, Module, From) ->
     put(callback_module, Module),
-
+    put(newID, 0),
+    ets:new(dataCache, [private, named_table, set]),
     {ok, UTF8} = file:read_file(Filename),
     {ok, UTF32} = from_binary(UTF8),
     Self = self(),
     spawn_link(fun() -> evoxml:parse(UTF32, Self) end),
-    FinalState = watch_parsing(#state{}),
+    ID=new_id(),
+    put_cache(ID, InitialData),
+    FinalState = watch_parsing(#state{id=ID}),
     TopTags = emitChildren(FinalState),
     Pretty = lists:flatten(lists:foldl(
                fun(Elem, InAcc) -> [indenticate(Elem)|InAcc] end,
@@ -38,13 +41,18 @@ watch_parsing(State) ->
     receive
 
         {tag_start, Name} ->
-            NewState = #state{tag=Name,
+            NewState = #state{id=new_id(),
+                              tag=Name,
                               level=State#state.level+1, 
                               parent=State},
             watch_parsing(NewState);
 
+        {attr, {{e, dataExp}, Value}} ->
+            watch_parsing(State#state{dataExpression=Value});
+
         {attr, {{e, data}, Value}} ->
-            watch_parsing(State#state{data=eval(Value ++ ".")});
+            put_cache(State#state.id, Value),
+            watch_parsing(State);
 
         {attr, {{e, render}, Value}} ->
             watch_parsing(State#state{render=Value});
@@ -69,13 +77,6 @@ watch_parsing(State) ->
             State
 
     end.
-
-eval(String) ->
-    {ok,Scanned,_} = erl_scan:string(String),
-    {ok,Parsed} = erl_parse:parse_exprs(Scanned),
-    B = erl_eval:add_binding('S', fun atom_to_list/1, erl_eval:new_bindings()), 
-    {value, Result, Env2} = erl_eval:exprs(Parsed,B),
-    Result.
 
 emitTag(Text) when is_list(Text) ->
     {Text, none};
@@ -120,13 +121,12 @@ renderTag(State) ->
         _ -> emitFullTag(State)
     end.
 
-applyRender(State) when State#state.render =:= none ->
+applyRender(#state{render=none}=State) ->
     State;
 applyRender(State) ->
     Render = list_to_atom(State#state.render),
     NewState = evorender:Render(State),
     NewState.
-
 
 emitFullTag(State) ->
     {openTag(State),
@@ -232,3 +232,16 @@ newlines_to_spaces([], Buffer) ->
     Buffer.
 
 spaces(Indent) -> string:chars(32, Indent*2).     
+
+new_id() ->
+    NewID = get(newID),
+    put(newID, NewID+1),
+    put_cache(NewID, undefined),
+    NewID.
+
+get_cache(ID) ->
+    ets:lookup_element(dataCache, ID, 2).
+
+put_cache(ID, Data) ->
+    ets:insert(dataCache, {ID, Data}).
+                       

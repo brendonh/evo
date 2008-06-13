@@ -1,13 +1,13 @@
 <?xml version="1.0?" encoding="UTF-8"?>
-<dog name="Ted" breed="Unknown" e:data="[1,2,3]">
-    <another e:render="foreach">
-      (<e:inv e:render="data" />)
+<dog name="Ted" breed="Unknown">
+    <another e:render="foreach" e:dataExp="D++D">
+      (<e:inv e:render="data" e:dataExp="[D, D]" />)
     </another>
-    <list e:data="string:tokens(S('one|two|three'), S('|'))" e:render="foreach">
+    <list e:dataExp="string:tokens(S('one|two|three'), S('|'))" e:render="foreach">
       * <item e:render="data">Value: </item>
     </list>
-    <e:inv e:data="'what'">
+    <e:inv e:dataExp="'what'">
       Shhhh! <a />
-      <e:inv e:render="data" e:data="'Heh heh'" />
+      <e:inv e:render="data" e:dataExp="string:copies(S('hi'), 5)" />
     </e:inv>
 </dog>
