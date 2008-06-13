@@ -90,7 +90,7 @@ emitTag(Atom) when is_atom(Atom) ->
 emitTag(#state{tag={e,attr}}=State) ->
     NewState = applyRender(State),
     Name = list_to_atom(proplists:get_value({none, name}, NewState#state.attrs)),
-    Value = emitChildren(NewState),
+    Value = lists:reverse(emitChildren(NewState)),
     Parent = NewState#state.parent,
     ParentAttrs2 = proplists:delete({none, Name}, Parent#state.attrs),
     NewParent = Parent#state{attrs=[{{none, Name}, Value}|ParentAttrs2]},

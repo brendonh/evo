@@ -6,8 +6,8 @@
     <list e:dataExp="string:tokens(S('one|two|three'), S('|'))" e:render="foreach">
       * <item e:render="data">Value: </item>
     </list>
-    <e:inv e:data="what">
-      Shhhh! <a><e:attr name="href">hooray</e:attr></a>
+    <e:inv e:render="foreach" e:dataExp="[S('what'), S('the'), S('...')]">
+      Shhhh! <a><e:attr name="href">hooray for <e:inv e:render="foreach"><e:inv e:render="data" e:dataExp="[D,D]" /></e:inv></e:attr></a>
       <e:inv e:render="data" e:dataExp="string:copies(S('hi'), 5)" />
     </e:inv>
 </dog>
