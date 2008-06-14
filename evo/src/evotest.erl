@@ -24,8 +24,8 @@ test() ->
     T = fun test_case/4,
     F = fun(N,I,D,O) -> test_case(N,I,D,O,false) end,
 
-
     StartTime = now(),
+
 
     %% Basics
 
@@ -35,7 +35,7 @@ test() ->
     T("SuffixSpace", '<div>Hi </div>', [], '<div>Hi </div>'),
     T("NoSpaces", '<div>Hi</div>', [], '<div>Hi</div>'),
 
-    
+
     % Invisible tags
 
     T("RemoveInvTop", '<e:inv>Hi</e:inv>', [], 'Hi'),
@@ -47,7 +47,7 @@ test() ->
     T("DataRender", '<div e:render="data" />', "content", '<div>content</div>'),
     T("DataRenderAppend", '<div e:render="data">one</div>', "two", '<div>onetwo</div>'),
     T("DataRenderSpace", '<div e:render="data">one </div>', "two", '<div>one two</div>'),
-    
+
 
     %% Type rendering
 
@@ -86,11 +86,15 @@ test() ->
     %% Foreach
 
     T("ForeachLit", '<div e:render="foreach">*</div>', [1,2,3], '<div>***</div>'),
-    T("ForeachData", '<div e:render="foreach"><e:inv e:render="data" /></div>', [1,2,3], '<div>123</div>'),
+    T("ForeachData", '<div e:render="foreach"><e:slot /></div>', [1,2,3], '<div>123</div>'),
     F("ForeachNest", 
-      '<div e:render="foreach"><div e:render="foreach"><e:inv e:render="data" /></div></div>', 
+      '<div e:render="foreach"><div e:render="foreach"><e:slot /></div></div>', 
       [[1,2,3], [4,5,6]], 
       '<div><div>123</div><div>456</div></div>'),
+    T("ForeachRowIndex", '<div e:render="foreach"><e:slot e:dataExp="{R,D}" /></div>', [a,b,c,d], '<div>{0,a}{1,b}{2,c}{3,d}</div>'),
+    T("ForeachOddEven", '<div e:render="foreach"><e:slot e:dataExp="OddEven" />,</div>', [a,b,c,d], '<div>odd,even,odd,even,</div>'),
+    F("ForeachClass", '<ul e:render="foreach"><li><e:attr name="class" e:render="data" e:dataExp="OddEven" /><e:slot /></li></ul>', 
+      [a,b,c,d], '<ul><li class="odd">a</li><li class="even">b</li><li class="odd">c</li><li class="even">d</li></ul>'),
 
 
     %% Shortcuts
@@ -100,10 +104,10 @@ test() ->
 
     T("DataKey", '<e:inv e:render="data" e:key="two" />', Data, 'world'),
     T("CompounKey", '<e:inv e:render="data" e:key="alpha.one" />', CompoundData, 'hello'),
-    T("Slot", '<e:slot name="two" />', Data, 'world'),
-    T("DataTag", '<e:data />', "Data", 'Data'),
-    T("CompoundDataTag", '<e:data key="alpha.two" />', CompoundData, 'world'),
-    T("Items", '<e:inv e:render="items"><e:data /></e:inv>', 
+    T("Slot", '<e:slot />', "Data", 'Data'),
+    T("KeySlot", '<e:slot key="one" />', Data, 'hello'),
+    T("CompoundKeySlot", '<e:slot key="alpha.two" />', CompoundData, 'world'),
+    T("Items", '<e:inv e:render="items"><e:slot /></e:inv>', 
       Data, '[{key,one},{value,hello}][{key,two},{value,world}]'),
     T("KeyTag", '<e:inv e:render="items"><e:key /></e:inv>',
       Data, 'onetwo'),

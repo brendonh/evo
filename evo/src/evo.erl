@@ -169,11 +169,6 @@ emitTag(#state{tag={e,inv}}=State) ->
     {lists:reverse(emitChildren(NewState)), none};
 
 emitTag(#state{tag={e,slot}}=State) ->
-    Name = list_to_atom(proplists:get_value({none, name}, State#state.attrs)),
-    Data = evorender:get_data(State),
-    emitTag(proplists:get_value(Name, Data));
-
-emitTag(#state{tag={e,data}}=State) ->
     Data = evorender:get_data(State),
     CompoundKey = proplists:get_value({none, key}, State#state.attrs),
     case CompoundKey of
