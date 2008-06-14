@@ -116,6 +116,9 @@ watch_parsing(State) ->
 
     end.
 
+emitTag("") ->
+    {"", none};
+
 emitTag([C1|_]=Text) when is_integer(C1) ->
     {Text, none};
 
@@ -142,6 +145,15 @@ emitTag(#state{tag={e,slot}}=State) ->
     Name = list_to_atom(proplists:get_value({none, name}, State#state.attrs)),
     Data = evorender:get_data(State),
     emitTag(proplists:get_value(Name, Data));
+
+emitTag(#state{tag={e,data}}=State) ->
+    emitTag(evorender:get_data(State));
+
+emitTag(#state{tag={e,key}}=State) ->
+    emitTag(proplists:get_value(key, evorender:get_data(State)));
+
+emitTag(#state{tag={e,value}}=State) ->
+    emitTag(proplists:get_value(value, evorender:get_data(State)));
 
 emitTag(#state{tag={e,Tag}}) ->
     erlang:error({"Unknown evo tag", Tag});

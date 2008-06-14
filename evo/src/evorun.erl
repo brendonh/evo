@@ -21,4 +21,3 @@ run() ->
         {ok, Result} ->
             io:format("~s~n", [Result])
     end.
-

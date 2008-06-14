@@ -1,8 +1,8 @@
 <div>
   <div e:render="data" e:dataExp="proplists:get_value(two, D)" />
-  <div e:render="data" e:key="three" />
+  <e:data e:key="three">Hello?</e:data>
   <e:slot name="one" />
   <ul e:render="items">
-    <li><e:slot name="key" /> => <e:slot name="value" /></li>
+    <li><e:key/> => <e:value/></li>
   </ul>
 </div>
