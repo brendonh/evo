@@ -102,6 +102,7 @@ test() ->
     T("CompounKey", '<e:inv e:render="data" e:key="alpha.one" />', CompoundData, 'hello'),
     T("Slot", '<e:slot name="two" />', Data, 'world'),
     T("DataTag", '<e:data />', "Data", 'Data'),
+    T("CompoundDataTag", '<e:data key="alpha.two" />', CompoundData, 'world'),
     T("Items", '<e:inv e:render="items"><e:data /></e:inv>', 
       Data, '[{key,one},{value,hello}][{key,two},{value,world}]'),
     T("KeyTag", '<e:inv e:render="items"><e:key /></e:inv>',

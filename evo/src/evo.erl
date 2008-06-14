@@ -174,7 +174,17 @@ emitTag(#state{tag={e,slot}}=State) ->
     emitTag(proplists:get_value(Name, Data));
 
 emitTag(#state{tag={e,data}}=State) ->
-    emitTag(evorender:get_data(State));
+    Data = evorender:get_data(State),
+    CompoundKey = proplists:get_value({none, key}, State#state.attrs),
+    case CompoundKey of
+        undefined ->
+            Final = Data;
+        Keys ->
+            Final = lists:foldl(
+                      fun(E, A) -> proplists:get_value(list_to_atom(E), A) end,
+                      Data, string:tokens(Keys, "."))
+    end,
+    emitTag(Final);
 
 emitTag(#state{tag={e,key}}=State) ->
     emitTag(proplists:get_value(key, evorender:get_data(State)));
