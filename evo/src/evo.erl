@@ -1,33 +1,35 @@
 -module(evo).
 
 -import (utf8, [from_binary/1, to_binary/1]).
--export([run/3, run/4, run_file/3, run_file/4, new_id/0, get_cache/1, put_cache/2]).
+-export([run/2, run/3, run_file/2, run_file/3, new_id/0, get_cache/1, put_cache/2]).
 
 -include("evo.hrl").
 
-run_file(Filename, InitialData, Module) ->
-    run_file(Filename, InitialData, Module, true).
+run_file(Filename, InitialData) ->
+    run_file(Filename, InitialData, true).
 
-run_file(Filename, InitialData, Module, Pretty) ->
+run_file(Filename, InitialData, Pretty) ->
     {ok, UTF8} = file:read_file(Filename),
     {ok, UTF32} = from_binary(UTF8),
-    case run(UTF32, InitialData, Module, Pretty) of
+    case run(UTF32, InitialData, Pretty) of
         {'EXIT', _, Error} -> {error, Error};
         Result -> to_binary(Result)
     end.
 
+run(Content, InitialData) ->   
+    run(Content, InitialData, true).
 
-run(Content, InitialData, Module) ->   
-    run(Content, InitialData, Module, true).
-
-run(Content, InitialData, Module, Pretty) ->   
+run(Content, InitialData, Pretty) ->   
     Self = self(),
-    spawn_link(fun() -> really_run(Content, InitialData, Module, Pretty, Self) end),
-    get_result().
+    Template = spawn_link(fun() -> prepare(Content) end),
+    Template ! {run, InitialData, Pretty, Self},
+    get_result(Template).
 
-get_result() ->
+
+get_result(Template) ->
     receive
         {result, R} ->
+            Template ! finished,
             after_death(R);
         {'EXIT', _, _}=Exit ->
             Exit;
@@ -48,27 +50,45 @@ after_death(Result) ->
             none
     end.
 
-really_run(Content, InitialData, Module, Pretty, From) ->
-    put(callback_module, Module),
-    put(newID, 0),
-    ets:new(dataCache, [private, named_table, set]),
+
+prepare(Content) ->
+    ets:new(dataCache, [private, set, named_table]),
+    put(newID, 1),
     Self = self(),
     spawn_link(fun() -> evoxml:parse(Content, Self) end),
-    ID=new_id(),
-    put_cache(ID, InitialData),
-    FinalState = watch_parsing(#state{id=ID}),
-    TopTags = emitChildren(FinalState),
+    FinalState = watch_parsing(#state{id=0}),
+    ets:new(finalCache, [private, set, named_table]),
+    ets:insert(finalCache, ets:tab2list(dataCache)),
+    accept_runs(FinalState).
 
-    I = case Pretty of
-            true -> fun indenticate/1;
-            false -> fun noindenticate/1
-        end,
 
-    Output = lists:flatten(lists:foldl(
-                             fun(Elem, InAcc) -> [I(Elem)|InAcc] end,
-                             [], TopTags)),
+accept_runs(State) ->
+    receive
+        
+        {run, InitialData, Pretty, From} ->
 
-    From ! {result, string:strip(Output, right, $\n)}. 
+            ets:delete_all_objects(dataCache),
+            ets:insert(dataCache, ets:tab2list(finalCache)),
+            put_cache(0, InitialData),
+
+            TopTags = emitChildren(State),
+
+            I = case Pretty of
+                    true -> fun indenticate/1;
+                    false -> fun noindenticate/1
+                end,
+            
+            Output = lists:flatten(lists:foldl(
+                                     fun(Elem, InAcc) -> [I(Elem)|InAcc] end,
+                                     [], TopTags)),
+            
+            From ! {result, string:strip(Output, right, $\n)},
+
+            accept_runs(State);
+
+        finished -> ok
+
+    end.
 
 watch_parsing(State) ->
     receive

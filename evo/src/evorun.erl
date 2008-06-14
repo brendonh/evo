@@ -15,7 +15,7 @@ testRec_to_proplist(TR) ->
 
 run() ->
     R = #testRec{one=1, two="hello", three=apple},
-    case evo:run_file("test.xml", testRec_to_proplist(R), ?MODULE) of
+    case evo:run_file("test.xml", testRec_to_proplist(R)) of
         {error, Error} ->
             io:format("Broke: ~p~n", [Error]);
         {ok, Result} ->

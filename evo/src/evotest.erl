@@ -7,7 +7,7 @@ test_case(Name, Input, Data, Output) ->
 
 test_case(Name, Input, Data, Output, Pretty) ->
     StringOutput = atom_to_list(Output),
-    case evo:run(atom_to_list(Input), Data, ?MODULE, Pretty) of
+    case evo:run(atom_to_list(Input), Data, Pretty) of
         StringOutput ->
             io:format("~.20s [OK]~n", [Name]);
         Other ->
