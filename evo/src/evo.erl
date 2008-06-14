@@ -107,8 +107,15 @@ watch_parsing(State) ->
             put_cache(State#state.id, Value),
             watch_parsing(State);
 
-        {attr, {{e, key}, Key}} ->
-            Exp = lists:flatten(io_lib:format("proplists:get_value(~s, D)", [Key])),
+        {attr, {{e, key}, CompoundKey}} ->
+            Exp = lists:flatten(
+                    lists:foldl(
+                      fun(E, A) -> 
+                              io_lib:format("proplists:get_value(~s, ~s)", [E, A]) 
+                      end, ["D"], 
+                      string:tokens(CompoundKey, "."))),
+            %Keys = 
+            %Exp = lists:flatten(io_lib:format("proplists:get_value(~s, D)", [Key])),
             watch_parsing(
               State#state{dataExpression=Exp});
 

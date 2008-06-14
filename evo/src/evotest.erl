@@ -25,6 +25,8 @@ test() ->
     F = fun(N,I,D,O) -> test_case(N,I,D,O,false) end,
 
 
+    StartTime = now(),
+
     %% Basics
 
     T("EmptyTop", '<div />', [], '<div />'),
@@ -94,7 +96,10 @@ test() ->
     %% Shortcuts
 
     Data = [{one, hello}, {two, world}],
+    CompoundData = [{alpha, Data}],
+
     T("DataKey", '<e:inv e:render="data" e:key="two" />', Data, 'world'),
+    T("CompounKey", '<e:inv e:render="data" e:key="alpha.one" />', CompoundData, 'hello'),
     T("Slot", '<e:slot name="two" />', Data, 'world'),
     T("DataTag", '<e:data />', "Data", 'Data'),
     T("Items", '<e:inv e:render="items"><e:data /></e:inv>', 
@@ -119,6 +124,10 @@ test() ->
     run_template(Template, [], "RepeatedRunThree", '<ul />'),
 
     Template ! finished,
+
+    EndTime = now(),
+
+    io:format("Total time: ~.10Bms~n", [round(timer:now_diff(EndTime, StartTime) / 1000)]),
 
     ok.
 

@@ -1,6 +1,7 @@
 <div>
   <div e:render="data" e:dataExp="proplists:get_value(two, D)" />
   <e:data e:key="three">Hello?</e:data>
+  <e:data e:data="what!?" />
   <e:slot name="one" />
   <ul e:render="items">
     <li><e:key/> => <e:value/></li>
