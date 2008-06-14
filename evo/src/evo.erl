@@ -1,7 +1,7 @@
 -module(evo).
 
 -import (utf8, [from_binary/1, to_binary/1]).
--export([run/2, run/3, run_file/2, run_file/3, new_id/0, get_cache/1, put_cache/2]).
+-export([prepare/1, run/2, run/3, run_file/2, run_file/3, new_id/0, get_cache/1, put_cache/2]).
 
 -include("evo.hrl").
 

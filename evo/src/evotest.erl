@@ -6,8 +6,13 @@ test_case(Name, Input, Data, Output) ->
     test_case(Name, Input, Data, Output, true).
 
 test_case(Name, Input, Data, Output, Pretty) ->
+    Result = evo:run(atom_to_list(Input), Data, Pretty),
+    report_success(Name, Result, Output).
+        
+
+report_success(Name, Result, Output) ->
     StringOutput = atom_to_list(Output),
-    case evo:run(atom_to_list(Input), Data, Pretty) of
+    case Result of
         StringOutput ->
             io:format("~.20s [OK]~n", [Name]);
         Other ->
@@ -99,4 +104,34 @@ test() ->
     T("ValueTag", '<e:inv e:render="items"><e:value /></e:inv>',
       Data, 'helloworld'),
 
+
+    %% Repeated runs
+    
+    Content = atom_to_list(
+                '<ul e:render="foreach"><li e:dataExp="[{D, D*2}]" e:render="items"><e:key />::<e:value /></li></ul>'),
+  
+    Template = spawn_link(fun() -> evo:prepare(Content) end),
+
+    run_template(Template, [1,2], "RepeatedRunOne", 
+                 '<ul><li>1::2</li><li>2::4</li></ul>'),
+    run_template(Template, [4,5,6], "RepeatedRunTwo", 
+                 '<ul><li>4::8</li><li>5::10</li><li>6::12</li></ul>'),
+    run_template(Template, [], "RepeatedRunThree", '<ul />'),
+
+    Template ! finished,
+
     ok.
+
+
+run_template(Template, Data, Name, Output) ->
+    Self = self(),
+    Template ! {run, Data, false, Self},
+
+    receive
+        {result, R} ->
+            report_success(Name, R, Output);
+        {'EXIT', _, Error} ->
+            io:format("Error: ~p~n", [Error])
+    after 1000 ->
+            io:format("Template dead~n")
+    end.
