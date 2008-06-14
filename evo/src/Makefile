@@ -9,7 +9,7 @@ VPATH = ../ebin
 
 ERL = erl -boot start_clean
 
-MODS = utf8 evoxml evorender evo evotest
+MODS = utf8 evoxml evorender evo evotest evorun
 
 all: compile
 

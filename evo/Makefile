@@ -15,8 +15,11 @@ all: compile
 
 .PHONY: clean cleaner run
 
+test: compile
+	erl -noshell -pa ebin -s evotest test -s init stop
+
 run: compile
-	./go
+	erl -noshell -pa ebin -s evorun run -s init stop
 
 compile: ${MODS:%=%.beam} subdirs
 

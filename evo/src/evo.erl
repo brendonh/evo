@@ -11,9 +11,10 @@ run_file(Filename, InitialData, Module) ->
 run_file(Filename, InitialData, Module, Pretty) ->
     {ok, UTF8} = file:read_file(Filename),
     {ok, UTF32} = from_binary(UTF8),
-    Result = run(UTF32, InitialData, Module, Pretty),
-    {ok, Output} = to_binary(Result),
-    Output.
+    case run(UTF32, InitialData, Module, Pretty) of
+        {'EXIT', _, Error} -> {error, Error};
+        Result -> to_binary(Result)
+    end.
 
 
 run(Content, InitialData, Module) ->   
@@ -28,6 +29,8 @@ get_result() ->
     receive
         {result, R} ->
             after_death(R);
+        {'EXIT', _, _}=Exit ->
+            Exit;
         Other ->
             io:format("WTF? ~p~n", [Other]),
             after_death(none)
@@ -38,7 +41,8 @@ get_result() ->
     
 after_death(Result) ->
     receive
-        {'EXIT', _, normal} -> Result
+        {'EXIT', _, normal} -> Result;
+        Other -> Other
     after 5000 ->
             io:format("Death too slow~n"),
             none
@@ -83,6 +87,11 @@ watch_parsing(State) ->
             put_cache(State#state.id, Value),
             watch_parsing(State);
 
+        {attr, {{e, key}, Key}} ->
+            Exp = lists:flatten(io_lib:format("proplists:get_value(~s, D)", [Key])),
+            watch_parsing(
+              State#state{dataExpression=Exp});
+
         {attr, {{e, render}, Value}} ->
             watch_parsing(State#state{render=Value});
 
@@ -107,7 +116,7 @@ watch_parsing(State) ->
 
     end.
 
-emitTag(Text) when is_list(Text) ->
+emitTag([C1|_]=Text) when is_integer(C1) ->
     {Text, none};
 
 emitTag(Int) when is_integer(Int) ->
@@ -129,6 +138,11 @@ emitTag(#state{tag={e,inv}}=State) ->
     NewState = applyRender(State),
     {lists:reverse(emitChildren(NewState)), none};
 
+emitTag(#state{tag={e,slot}}=State) ->
+    Name = list_to_atom(proplists:get_value({none, name}, State#state.attrs)),
+    Data = evorender:get_data(State),
+    emitTag(proplists:get_value(Name, Data));
+
 emitTag(#state{tag={e,Tag}}) ->
     erlang:error({"Unknown evo tag", Tag});
 
@@ -137,7 +151,10 @@ emitTag(#state{render=none}=State) ->
 
 emitTag(#state{}=State) ->
     NewState = applyRender(State),
-    emitTag(NewState).
+    emitTag(NewState);
+
+emitTag(Other) ->
+    {io_lib:format("~p", [Other]), none}.
 
 
 emitChildren(State) ->
@@ -217,7 +234,6 @@ indenticate(TagSoup) ->
 noindenticate(TagSoup) ->
     PF = partial_flatten(TagSoup),
     Joined = noindent(PF),
-    Flattened = lists:flatten(Joined),
     lists:flatten(Joined).
 
 partial_flatten({Tag, Content, End}) ->

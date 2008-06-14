@@ -2,7 +2,6 @@
 
 -export([test/0]).
 
-
 test_case(Name, Input, Data, Output) ->
     test_case(Name, Input, Data, Output, true).
 
@@ -55,9 +54,3 @@ test() ->
       "<div><div>123</div><div>456</div></div>"),
 
     ok.
-    
-
-
-test2() ->
-    io:format("~s~n", [evo:run_file("test.xml", [20320,22909], ?MODULE, false)]).
-

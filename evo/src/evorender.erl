@@ -2,7 +2,7 @@
 
 -include("evo.hrl").
 
--export([data/1, foreach/1, get_data/1]).
+-export([data/1, foreach/1, items/1, get_data/1]).
 
 data(State) ->
     Data = get_data(State),
@@ -22,6 +22,12 @@ foreach(State) ->
                     end,
                     lists:reverse(get_data(State))),
     State#state{render=none, children=NewChildren}.
+
+items(State) ->
+    Data = get_data(State),
+    NewData = lists:map(fun({K,V}) -> [{key, K}, {value, V}] end, Data),
+    evo:put_cache(State#state.id, NewData),
+    foreach(State).
 
 
 get_data(#state{id=ID, dataExpression=none, parent=none}) ->

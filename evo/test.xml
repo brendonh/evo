@@ -1,13 +1,8 @@
-<?xml version="1.0?" encoding="UTF-8"?>
-<dog name="Ted" breed="Unknown">
-    <another e:render="foreach" e:dataExp="D++D">
-      (<e:inv e:render="data" e:dataExp="[D, D]" />)
-    </another>
-    <list e:dataExp="string:tokens(S('one|two|three'), S('|'))" e:render="foreach">
-      * <item e:render="data">Value: </item>
-    </list>
-    <e:inv e:render="foreach" e:dataExp="[S('hey'), S('man')]">
-      Shhhh! <a><e:attr name="href">hooray for <e:inv e:render="foreach"><e:inv e:render="data" e:dataExp="[D,D]" /></e:inv></e:attr></a>
-      <e:inv e:render="data" e:dataExp="string:copies(S('hi'), 5)" />
-    </e:inv>
-</dog>
+<div>
+  <div e:render="data" e:dataExp="proplists:get_value(two, D)" />
+  <div e:render="data" e:key="three" />
+  <e:slot name="one" />
+  <ul e:render="items">
+    <li><e:slot name="key" /> => <e:slot name="value" /></li>
+  </ul>
+</div>
