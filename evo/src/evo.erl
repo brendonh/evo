@@ -1,41 +1,70 @@
 -module(evo).
 
 -import (utf8, [from_binary/1, to_binary/1]).
--export([run/3, new_id/0, get_cache/1, put_cache/2]).
+-export([run/3, run/4, run_file/3, run_file/4, new_id/0, get_cache/1, put_cache/2]).
 
 -include("evo.hrl").
 
-run(Filename, InitialData, Module) ->
+run_file(Filename, InitialData, Module) ->
+    run_file(Filename, InitialData, Module, true).
+
+run_file(Filename, InitialData, Module, Pretty) ->
+    {ok, UTF8} = file:read_file(Filename),
+    {ok, UTF32} = from_binary(UTF8),
+    Result = run(UTF32, InitialData, Module, Pretty),
+    {ok, Output} = to_binary(Result),
+    Output.
+
+
+run(Content, InitialData, Module) ->   
+    run(Content, InitialData, Module, true).
+
+run(Content, InitialData, Module, Pretty) ->   
     Self = self(),
-    spawn_link(fun() -> really_run(Filename, InitialData, Module, Self) end),
+    spawn_link(fun() -> really_run(Content, InitialData, Module, Pretty, Self) end),
+    get_result().
+
+get_result() ->
     receive
         {result, R} ->
-            R;
+            after_death(R);
         Other ->
             io:format("WTF? ~p~n", [Other]),
-            none
+            after_death(none)
     after 5000 ->
             io:format("Too slow!~n"),
+            after_death(none)
+    end.
+    
+after_death(Result) ->
+    receive
+        {'EXIT', _, normal} -> Result
+    after 5000 ->
+            io:format("Death too slow~n"),
             none
     end.
 
-really_run(Filename, InitialData, Module, From) ->
+really_run(Content, InitialData, Module, Pretty, From) ->
     put(callback_module, Module),
     put(newID, 0),
     ets:new(dataCache, [private, named_table, set]),
-    {ok, UTF8} = file:read_file(Filename),
-    {ok, UTF32} = from_binary(UTF8),
     Self = self(),
-    spawn_link(fun() -> evoxml:parse(UTF32, Self) end),
+    spawn_link(fun() -> evoxml:parse(Content, Self) end),
     ID=new_id(),
     put_cache(ID, InitialData),
     FinalState = watch_parsing(#state{id=ID}),
     TopTags = emitChildren(FinalState),
-    Pretty = lists:flatten(lists:foldl(
-               fun(Elem, InAcc) -> [indenticate(Elem)|InAcc] end,
-               [], TopTags)),
-    {ok, Output} = to_binary(Pretty),
-    From ! {result, Output}. 
+
+    I = case Pretty of
+            true -> fun indenticate/1;
+            false -> fun noindenticate/1
+        end,
+
+    Output = lists:flatten(lists:foldl(
+                             fun(Elem, InAcc) -> [I(Elem)|InAcc] end,
+                             [], TopTags)),
+
+    From ! {result, string:strip(Output, right, $\n)}. 
 
 watch_parsing(State) ->
     receive
@@ -138,9 +167,10 @@ emitChildren(State, true) ->
 
 
 renderTag(State) ->
-    case lists:flatten(State#state.children) of
-        [] -> emitEmptyTag(State);
-        _ -> emitFullTag(State)
+    {NewState, Children} = emitChildren(State, true),
+    case lists:flatten(Children) of
+        [] -> emitEmptyTag(NewState);
+        _ -> emitFullTag(NewState, Children)
     end.
 
 applyRender(#state{render=none}=State) ->
@@ -150,11 +180,10 @@ applyRender(State) ->
     NewState = evorender:Render(State),
     NewState.
 
-emitFullTag(State) ->
-    {NewState, Children} = emitChildren(State, true),
-    {openTag(NewState),
+emitFullTag(State, Children) ->
+    {openTag(State),
      lists:reverse(Children),
-     closeTag(NewState)}.
+     closeTag(State)}.
 
 emitEmptyTag(State) ->
     [lists:flatten([$<, flatten_name(State#state.tag), 
@@ -185,6 +214,12 @@ indenticate(TagSoup) ->
     LineList = lists:map(fun erlang:tuple_to_list/1, Flattened),
     string:join(lists:map(fun lists:flatten/1, LineList), "\n") ++ [$\n].
 
+noindenticate(TagSoup) ->
+    PF = partial_flatten(TagSoup),
+    Joined = noindent(PF),
+    Flattened = lists:flatten(Joined),
+    lists:flatten(Joined).
+
 partial_flatten({Tag, Content, End}) ->
     FlatTag = lists:flatten(Tag),
     FlatEnd = lists:flatten(End),
@@ -210,14 +245,13 @@ partial_flatten(Stuff) when is_list(Stuff) ->
 
 
 indent({Tag, [C1|_]=Content, End}, Indent) when is_integer(C1) ->
-    Stripped = string:strip(Content),
-    TotalLen = length(Tag) + length(Stripped) + length(End),
+    TotalLen = length(Tag) + length(Content) + length(End),
     case TotalLen < 40 of
         true ->
-            [{spaces(Indent), Tag, Stripped, End}];
+            [{spaces(Indent), Tag, Content, End}];
         false ->
             [{spaces(Indent), Tag},
-             {spaces(Indent+1), Stripped},
+             {spaces(Indent+1), string:strip(Content)},
              {spaces(Indent), End}]
     end;
 indent({Tag, Content, End}, Indent) ->
@@ -231,7 +265,18 @@ indent([C1|_]=Line, Indent) when is_integer(C1) ->
         _ -> [{spaces(Indent), Stripped}]
     end;
 indent(Lines, Indent) ->
-    lists:map(fun(L) -> indent(L, Indent+1) end, Lines).
+    lists:map(fun(L) -> indent(L, Indent) end, Lines).
+
+
+noindent({Tag, [C1|_]=Content, End}) when is_integer(C1) ->
+    [Tag, Content, End];
+noindent({Tag, Content, End}) ->
+    [Tag, lists:map(fun(L) -> noindent(L) end, Content), End];
+noindent([C1|_]=Line) when is_integer(C1) ->
+    [Line];
+noindent(Lines) ->
+    lists:map(fun(L) -> noindent(L) end, Lines).
+
 
 join_text(Bits) ->
     {Text, AllText} = lists:foldl(fun maybe_join/2, {[], true}, Bits),
