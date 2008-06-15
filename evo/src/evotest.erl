@@ -142,9 +142,9 @@ run_template(Template, Data, Name, Output) ->
     Template ! {run, Data, false, Self},
 
     receive
-        {result, R} ->
+        {Template, result, R} ->
             report_success(Name, R, Output);
-        {'EXIT', _, Error} ->
+        {Template, 'EXIT', _, Error} ->
             io:format("Error: ~p~n", [Error])
     after 1000 ->
             io:format("Template dead~n")

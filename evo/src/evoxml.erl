@@ -6,8 +6,9 @@ parse(XML, From) ->
     put(callback_module, From),
     XML2 = skip_whitespace(XML),
     XML3 = absorb_typeDecl(XML2),
-    XML4 = parse_tag(XML3),
-    case skip_whitespace(XML4) of
+    XML4 = absorb_docType(XML3),
+    XML5 = parse_tag(XML4),
+    case skip_whitespace(XML5) of
         [] -> From ! done;
         false -> erlang:error("No top-level tag found");
         Stuff -> erlang:error({"Junk after document end", Stuff})
@@ -15,6 +16,9 @@ parse(XML, From) ->
 
 absorb_typeDecl(XML) ->
     absorb_unhandledTag("<?xml", "?>", XML).
+
+absorb_docType(XML) ->
+    absorb_unhandledTag("<!", ">", XML).
 
 absorb_unhandledTag(Start, End, XML) ->
     case expect(Start, XML) of

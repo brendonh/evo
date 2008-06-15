@@ -21,6 +21,19 @@ test: compile
 run: compile
 	erl -noshell -pa ebin -s evorun run -s init stop
 
+pgsql: compile
+	erl -pa ebin \
+		-pa ../mochiweb/ebin \
+		-pa ../RouteComplete/avl-common/ebin \
+		-s evopgsql start 8081
+
+pgsql_sasl: compile
+	erl -boot start_sasl \
+		-pa ebin \
+		-pa ../mochiweb/ebin \
+		-pa ../RouteComplete/avl-common/ebin \
+		-s evopgsql start 8081
+
 compile: ${MODS:%=%.beam} subdirs
 
 subdirs:

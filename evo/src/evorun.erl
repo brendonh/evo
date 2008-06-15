@@ -14,8 +14,9 @@ testRec_to_proplist(TR) ->
     lists:zip(record_info(fields, testRec), Fields).
 
 run() ->
-    R = #testRec{one=1, two="hello", three=apple},
-    case evo:run_file("test.xml", testRec_to_proplist(R)) of
+    Data = [{title, "Welcome to Nai's Page"},
+            {items, ["Apple", "Orange", "Pear"]}],
+    case evo:run_file("test.xml", Data) of
         {error, Error} ->
             io:format("Broke: ~p~n", [Error]);
         {ok, Result} ->

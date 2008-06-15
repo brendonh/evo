@@ -28,10 +28,10 @@ run(Content, InitialData, Pretty) ->
 
 get_result(Template) ->
     receive
-        {result, R} ->
+        {Template, result, R} ->
             Template ! finished,
             after_death(R);
-        {'EXIT', _, _}=Exit ->
+        {Template, 'EXIT', _, _}=Exit ->
             Exit;
         Other ->
             io:format("WTF? ~p~n", [Other]),
@@ -52,43 +52,50 @@ after_death(Result) ->
 
 
 prepare(Content) ->
-    ets:new(dataCache, [private, set, named_table]),
+    put(dataCache, ets:new(dataCache, [private, set])),
+    put(finalCache, ets:new(finalCache, [private, set])),
     put(newID, 1),
     Self = self(),
     spawn_link(fun() -> evoxml:parse(Content, Self) end),
     FinalState = watch_parsing(#state{id=0}),
-    ets:new(finalCache, [private, set, named_table]),
-    ets:insert(finalCache, ets:tab2list(dataCache)),
+    ets:insert(get(finalCache), ets:tab2list(get(dataCache))),
     accept_runs(FinalState).
 
 
 accept_runs(State) ->
     receive
         
+        {run_raw, InitialData, From} ->
+            From ! {self(), result, {tags, get_tags(State, InitialData)}},
+            accept_runs(State);
+
         {run, InitialData, Pretty, From} ->
-
-            ets:delete_all_objects(dataCache),
-            ets:insert(dataCache, ets:tab2list(finalCache)),
-            put_cache(0, InitialData),
-
-            TopTags = emitChildren(State),
-
+            TopTags = get_tags(State, InitialData),
             I = case Pretty of
                     true -> fun indenticate/1;
                     false -> fun noindenticate/1
                 end,
-            
             Output = lists:flatten(lists:foldl(
                                      fun(Elem, InAcc) -> [I(Elem)|InAcc] end,
                                      [], TopTags)),
-            
-            From ! {result, string:strip(Output, right, $\n)},
+            From ! {self(), result, string:strip(Output, right, $\n)},
+            accept_runs(State);
 
+        Other ->
+            cr:dbg({unknown_command, Other}),
             accept_runs(State);
 
         finished -> ok
 
     end.
+
+
+get_tags(State, InitialData) ->
+    ets:delete_all_objects(get(dataCache)),
+    ets:insert(get(dataCache), ets:tab2list(get(finalCache))),
+    put_cache(0, InitialData),
+    emitChildren(State).
+
 
 watch_parsing(State) ->
     receive
@@ -196,6 +203,9 @@ emitTag(#state{render=none}=State) ->
 emitTag(#state{}=State) ->
     NewState = applyRender(State),
     emitTag(NewState);
+
+emitTag({tags, Tags}) ->
+    {Tags, none};
 
 emitTag(Other) ->
     {io_lib:format("~p", [Other]), none}.
@@ -368,8 +378,8 @@ new_id() ->
     NewID.
 
 get_cache(ID) ->
-    ets:lookup_element(dataCache, ID, 2).
+    ets:lookup_element(get(dataCache), ID, 2).
 
 put_cache(ID, Data) ->
-    ets:insert(dataCache, {ID, Data}).
+    ets:insert(get(dataCache), {ID, Data}).
                        
