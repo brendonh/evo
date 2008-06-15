@@ -59,13 +59,14 @@ init([TemplateCallback]) ->
 handle_call({run, TemplateName, Data}, _From, State) ->
     handle_call({run, TemplateName, Data, run}, _From, State);
 
-handle_call({run, TemplateName, Data, Command}, _From, State) ->
+handle_call({run, TemplateName, Data, Command}, From, State) ->
     case ets:lookup(templateCache, TemplateName) of
         [] ->
             cr:dbg({generating, TemplateName}),
             {Mod, Func} = State#state.templateCallback,
             Content = apply(Mod, Func, [TemplateName]),
-            Template = spawn_link(fun() -> evo:prepare(Content) end),
+            Template = spawn(fun() -> evo:prepare(Content) end),
+            cr:dbg({template, Template}),
             ets:insert(templateCache, {TemplateName, Template});
         [{TemplateName, Template}] -> ok
     end,
@@ -78,11 +79,13 @@ handle_call({run, TemplateName, Data, Command}, _From, State) ->
     receive
         {Template, result, R} ->
             Result = {ok, R};
-        {'Template, EXIT', _, Error} ->
+        {'EXIT', _, Error} ->
             Result = {error, Error}
-    after 1000 ->
-            % Restart template?
-            Result = {error, "Template dead :-("}
+    after 3000 ->
+            exit(Template, too_slow),
+            cr:dbg({killing, TemplateName}),
+            ets:delete(templateCache, TemplateName),
+            Result = {error, "Template too slow"}
     end,
     {reply, Result, State};
 

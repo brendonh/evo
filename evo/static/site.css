@@ -73,3 +73,18 @@ li {
   color: #00f;
   text-align: right;
 }
+
+.pageLinks {
+  color: #999;
+  margin-left: 20px;
+  font-size: 0.8em;
+}
+
+.pageLinks a, .pageLinks a:visited {
+  text-decoration: none;
+  color: blue;
+}
+
+.pageLinks a:hover {
+  text-decoration: underline;
+}

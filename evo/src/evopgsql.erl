@@ -4,6 +4,7 @@
 
 -define(DOC_ROOT, "static").
 -define(CONTENT_TYPE, "text/html; charset=utf-8").
+-define(PAGE_SIZE, 10).
 
 start() ->
     start("1235").
@@ -40,8 +41,10 @@ request(Req) ->
     case dispatch(Req, Req:get(method), Real) of
         {ok, Type, Title, Result} ->
             SiteData = [{title, Title}, {content, Result}],
-            {ok, Final} = gen_server:call(evotemplate, {run, site, SiteData}),
-            Req:ok({Type, Final});
+            case gen_server:call(evotemplate, {run, site, SiteData}) of
+                {ok, Final} -> Req:ok({Type, Final});
+                {error, Error} -> Req:ok({?CONTENT_TYPE, Error})
+            end;
         {other, Result} ->
             Result;
         _ ->
@@ -51,17 +54,28 @@ request(Req) ->
 dispatch(_Req, 'GET', ["tables"]) ->
     Tables = gen_server:call(magicdb, {getTables, "routecomplete"}),
     Data = [{tables, lists:sort(Tables)}, {pretty, fun pretty_name/1}],
-    {ok, Result} = gen_server:call(evotemplate, {run, tableList, Data, run_raw}),
-    {ok, ?CONTENT_TYPE, "Tables", Result};
+    case gen_server:call(evotemplate, {run, tableList, Data, run_raw}) of
+        {ok, Result} -> {ok, ?CONTENT_TYPE, "Tables", Result};
+        {error, Error} -> {ok, ?CONTENT_TYPE, "Error", Error}
+    end;
 
-dispatch(_Req, 'GET', ["tables",Name]) ->
+dispatch(Req, 'GET', ["tables",Name]) ->
+    {other, Req:respond({302, [{<<"Location">>, list_to_binary("/tables/"++Name++"/1")}], <<"">>})};
+
+dispatch(_Req, 'GET', ["tables",Name,Page]) ->
     Table = list_to_atom(Name),
     Columns = gen_server:call(magicdb, {getColumns, Table}),
     ColNames = lists:map(fun({K,_V}) -> K end, Columns),
-    Rows = gen_server:call(magicdb, {getRows, Table, []}),
-    Data = [{columns, ColNames}, {rows, Rows}, {db_value, fun format_db_value/1}],
-    {ok, Result} = gen_server:call(evotemplate, {run, tableContent, Data, run_raw}),
-    {ok, ?CONTENT_TYPE, Name, Result};
+    OffsetIndex = list_to_integer(Page) - 1,
+    Rows = gen_server:call(magicdb, {getRows, Table, [], {?PAGE_SIZE, OffsetIndex*?PAGE_SIZE}}),
+    Data = [{columns, ColNames}, {rows, Rows}, 
+            {table, Table}, {page, list_to_integer(Page)}, 
+            {db_value, fun format_db_value/1}, 
+            {pageLink, fun page_link/3}],
+    case gen_server:call(evotemplate, {run, tableContent, Data, run_raw}) of
+        {ok, Result} -> {ok, ?CONTENT_TYPE, Name, Result};
+        {error, Error} -> {ok, ?CONTENT_TYPE, "Error", Error}
+    end;
 
 dispatch(Req, 'GET', [""]) ->
     {other, Req:respond({302, [{<<"Location">>, <<"/tables">>}], <<"">>})};
@@ -83,8 +97,26 @@ format_db_value({_Col, null}) ->
     {tags, [{"<div class=\"null\">", "null", "</div>"}]};
 format_db_value({_Col, Val}) when is_integer(Val) ->
     {tags, [{"<div class=\"number\">", integer_to_list(Val), "</div>"}]};
+format_db_value({_Col, Val}) when is_float(Val) ->
+    {tags, [{lists:flatten(io_lib:format("<div class=\"number\" title=\"~p\">", [Val])), 
+             lists:flatten(io_lib:format("~.2f", [Val])), 
+             "</div>"}]};
 format_db_value({_Col, Val}) ->
-    Val.
+    lists:flatten(io_lib:format("~p", [Val])).
+
+
+
+page_link(Data, Offset, Label) ->
+    Table = proplists:get_value(table, Data),
+    Page = proplists:get_value(page, Data) + list_to_integer(Offset),
+    case Page of
+        I when I < 1 ->
+            Label;
+        _ ->
+            {tags, [{lists:flatten(io_lib:format("<a href=\"/tables/~s/~B\">", [Table, Page])),
+                     Label,
+                     "</a>"}]}
+    end.
 
 
 template(site) -> "
@@ -117,6 +149,11 @@ template(tableList) -> atom_to_list('
 ');
 
 template(tableContent) -> "
+<div>
+<div class=\"pageLinks\">
+  <e:slot e:format=\"pageLink -1 Prev\" />
+  <e:slot e:format=\"pageLink +1 Next\" />
+</div>
 <div class=\"tableScroll\">
 <table class=\"dbTable\">
   <tr e:key=\"columns\">
@@ -131,6 +168,7 @@ template(tableContent) -> "
     </tr>
   </tbody>
 </table>
+</div>
 </div>
 ".
 

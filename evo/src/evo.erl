@@ -117,7 +117,8 @@ watch_parsing(State) ->
             watch_parsing(State);
 
         {attr, {{e, format}, Key}} ->
-            watch_parsing(State#state{formatFunc=list_to_atom(Key)});
+            [Func|Args] = string:tokens(Key, " "),
+            watch_parsing(State#state{formatFunc={list_to_atom(Func), Args}});
 
         {attr, {{e, key}, CompoundKey}} ->
             Exp = lists:flatten(

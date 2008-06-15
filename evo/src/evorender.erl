@@ -54,11 +54,12 @@ get_data(#state{id=ID, dataExpression=DataExp, parent=Parent}=State) ->
     end.
 
 format(#state{formatFunc=none}, Data) -> Data;
-format(#state{formatFunc=Key}, Data) ->
+format(#state{formatFunc={Key, Args}}, Data) ->
     Func = proplists:get_value(Key, evo:get_cache(0)),
     case Func of
         undefined -> "Missing format function: " ++ Key;
-        _ -> Func(Data)
+        _ ->
+            apply(Func, [Data|Args])
     end.          
 
 get_row(#state{row=none, parent=none}) -> none;
