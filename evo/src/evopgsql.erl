@@ -3,6 +3,7 @@
 -export([start/0, start/1, request/1, template/1]).
 
 -define(DOC_ROOT, "static").
+-define(CONTENT_TYPE, "text/html; charset=utf-8").
 
 start() ->
     start("1235").
@@ -51,7 +52,7 @@ dispatch(_Req, 'GET', ["tables"]) ->
     Tables = gen_server:call(magicdb, {getTables, "routecomplete"}),
     Data = [{tables, lists:sort(Tables)}, {pretty, fun pretty_name/1}],
     {ok, Result} = gen_server:call(evotemplate, {run, tableList, Data, run_raw}),
-    {ok, "text/html", "Tables", Result};
+    {ok, ?CONTENT_TYPE, "Tables", Result};
 
 dispatch(_Req, 'GET', ["tables",Name]) ->
     Table = list_to_atom(Name),
@@ -60,7 +61,7 @@ dispatch(_Req, 'GET', ["tables",Name]) ->
     Rows = gen_server:call(magicdb, {getRows, Table, []}),
     Data = [{columns, ColNames}, {rows, Rows}, {db_value, fun format_db_value/1}],
     {ok, Result} = gen_server:call(evotemplate, {run, tableContent, Data, run_raw}),
-    {ok, "text/html", Name, Result};
+    {ok, ?CONTENT_TYPE, Name, Result};
 
 dispatch(Req, 'GET', [""]) ->
     {other, Req:respond({302, [{<<"Location">>, <<"/tables">>}], <<"">>})};
@@ -92,6 +93,7 @@ template(site) -> "
     \"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd\">
 <html xmlns=\"http://www.w3.org/1999/xhtml\" lang=\"en\" xml:lang=\"en\">
   <head>
+    <meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\" />
     <title>RouteComplete Browser</title>
     <link rel=\"stylesheet\" href=\"/static/site.css\" type=\"text/css\" />
   </head>
