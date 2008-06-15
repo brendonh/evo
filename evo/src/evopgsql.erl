@@ -2,6 +2,8 @@
 
 -export([start/0, start/1, request/1, template/1]).
 
+-define(DOC_ROOT, "static").
+
 start() ->
     start("1235").
 
@@ -45,10 +47,10 @@ request(Req) ->
             Req:respond({500, [], <<"Internal error">>})
     end.
 
-
 dispatch(Req, 'GET', ["tables"]) ->
     Tables = gen_server:call(magicdb, {getTables, "routecomplete"}),
-    {ok, Result} = gen_server:call(evotemplate, {run, tableList, Tables, run_raw}),
+    Data = [{tables, lists:sort(Tables)}, {pretty, fun pretty_name/1}],
+    {ok, Result} = gen_server:call(evotemplate, {run, tableList, Data, run_raw}),
     {ok, "text/html", "Tables", Result};
 
 dispatch(Req, 'GET', ["model",ID]) ->
@@ -57,8 +59,17 @@ dispatch(Req, 'GET', ["model",ID]) ->
 dispatch(Req, 'GET', [""]) ->
     {other, Req:respond({302, [{<<"Location">>, <<"/tables">>}], <<"">>})};
 
+dispatch(Req, 'GET', ["static"|PathBits]) ->
+    {other, Req:serve_file(string:join(PathBits, "/"), ?DOC_ROOT)};
+
 dispatch(Req, _, _) ->
     {other, Req:not_found()}.
+
+
+pretty_name(Name) ->
+    Bits = string:tokens(Name, "_"),
+    TitleBits = lists:map(fun([C|R]) -> [string:to_upper(C)|R] end, Bits),
+    string:join(TitleBits, " ").
 
 
 template(site) -> "
@@ -68,6 +79,7 @@ template(site) -> "
 <html xmlns=\"http://www.w3.org/1999/xhtml\" lang=\"en\" xml:lang=\"en\">
   <head>
     <title>RouteComplete Browser</title>
+    <link rel=\"stylesheet\" href=\"/static/site.css\" type=\"text/css\" />
   </head>
   <body>
     <div id=\"main\">
@@ -80,7 +92,13 @@ template(site) -> "
 ";
 
 template(tableList) -> atom_to_list('
-<ul e:render="foreach">
-  <li><a><e:attr name="href" e:render="data">/tables/</e:attr><e:slot /></a></li>
+<ul class="tableList" e:render="foreach" e:key="tables">
+  <li>
+    <e:attr name="class" e:render="data" e:dataExp="OddEven" />
+    <a>
+     <e:attr name="href" e:render="data">/tables/</e:attr>
+     <e:slot e:format="pretty" />
+    </a>
+  </li>
 </ul>
 ').

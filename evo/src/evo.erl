@@ -81,11 +81,11 @@ accept_runs(State) ->
             From ! {self(), result, string:strip(Output, right, $\n)},
             accept_runs(State);
 
+        finished -> ok;
+
         Other ->
             cr:dbg({unknown_command, Other}),
-            accept_runs(State);
-
-        finished -> ok
+            accept_runs(State)
 
     end.
 
@@ -113,6 +113,9 @@ watch_parsing(State) ->
         {attr, {{e, data}, Value}} ->
             put_cache(State#state.id, Value),
             watch_parsing(State);
+
+        {attr, {{e, format}, Key}} ->
+            watch_parsing(State#state{formatFunc=list_to_atom(Key)});
 
         {attr, {{e, key}, CompoundKey}} ->
             Exp = lists:flatten(
@@ -178,21 +181,21 @@ emitTag(#state{tag={e,inv}}=State) ->
 emitTag(#state{tag={e,slot}}=State) ->
     Data = evorender:get_data(State),
     CompoundKey = proplists:get_value({none, key}, State#state.attrs),
-    case CompoundKey of
+    Final = case CompoundKey of
         undefined ->
-            Final = Data;
+            Data;
         Keys ->
-            Final = lists:foldl(
-                      fun(E, A) -> proplists:get_value(list_to_atom(E), A) end,
-                      Data, string:tokens(Keys, "."))
+            lists:foldl(
+              fun(E, A) -> proplists:get_value(list_to_atom(E), A) end,
+              Data, string:tokens(Keys, "."))
     end,
-    emitTag(Final);
+    emitTag(evorender:format(State, Final));
 
 emitTag(#state{tag={e,key}}=State) ->
-    emitTag(proplists:get_value(key, evorender:get_data(State)));
+    emitTag(proplists:get_value(key, evorender:format(State, evorender:get_data(State))));
 
 emitTag(#state{tag={e,value}}=State) ->
-    emitTag(proplists:get_value(value, evorender:get_data(State)));
+    emitTag(proplists:get_value(value, evorender:format(State, evorender:get_data(State))));
 
 emitTag(#state{tag={e,Tag}}) ->
     erlang:error({"Unknown evo tag", Tag});

@@ -1,0 +1,42 @@
+#main {
+  width: 960px;
+  margin: 10px auto 10px auto;
+  padding: 10px;
+  border: 1px dotted black;
+  font-family: Sans;
+}
+
+.mainTitle {
+  font-size: 1.5em;
+}
+
+.subTitle {
+  margin-left: 20px;
+  font-size: 1.2em;
+}
+
+.tableList {
+ width: 250px;
+ border: 1px dotted #ccc;
+ border-bottom: 0;
+ padding: 0;
+ margin-left: 20px;
+} 
+
+li {
+  list-style-type: none;
+  border-bottom: 1px dotted #ccc;  
+  padding: 3px;
+}
+
+.tableList li.odd {
+  background-color: #eef;
+}
+
+.tableList a {
+  text-decoration: none;
+}
+
+.tableList a:hover {
+  text-decoration: underline;
+}

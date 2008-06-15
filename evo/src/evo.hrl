@@ -3,6 +3,7 @@
   tag=none,
   render=none,
   dataExpression=none,
+  formatFunc=none,
   level=0,
   row=none,
   attrs=[],

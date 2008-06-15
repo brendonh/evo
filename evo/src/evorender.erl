@@ -2,11 +2,11 @@
 
 -include("evo.hrl").
 
--export([data/1, foreach/1, items/1, get_data/1]).
+-export([data/1, foreach/1, items/1, get_data/1, format/2]).
 
 data(State) ->
     Data = get_data(State),
-    State#state{children=[Data|State#state.children],
+    State#state{children=[format(State, Data)|State#state.children],
                 render=none}.
 
 foreach(State) ->
@@ -53,7 +53,15 @@ get_data(#state{id=ID, dataExpression=DataExp, parent=Parent}=State) ->
             Data
     end.
 
-get_row(#state{row=none, parent=none}=State) -> none;
+format(#state{formatFunc=none}, Data) -> Data;
+format(#state{formatFunc=Key}, Data) ->
+    Func = proplists:get_value(Key, evo:get_cache(0)),
+    case Func of
+        undefined -> "Missing format function: " ++ Key;
+        _ -> Func(Data)
+    end.          
+
+get_row(#state{row=none, parent=none}) -> none;
 get_row(#state{row=none, parent=Parent}) -> get_row(Parent);
 get_row(#state{row=Row}) -> Row.
 
