@@ -6,6 +6,9 @@
 -define(CONTENT_TYPE, "text/html; charset=utf-8").
 -define(PAGE_SIZE, 10).
 
+-define(DSN, "DSN=routecomplete_dev;UID=routecomplete;PWD=secret").
+-define(DATABASE, "routecomplete").
+
 start() ->
     start("1235").
 
@@ -21,7 +24,7 @@ start(Port) ->
     end,
 
     evotemplate:start_link({?MODULE, template}),
-    magicdb:start_link({dsn, "DSN=routecomplete_dev;UID=routecomplete;PWD=secret"}),
+    magicdb:start_link({dsn, ?DSN}),
     mochiweb_http:start([{port, Port}, {loop, {?MODULE, request}}]),
 
     cr:dbg({evopgsql, running}),
@@ -52,7 +55,7 @@ request(Req) ->
     end.
 
 dispatch(_Req, 'GET', ["tables"]) ->
-    Tables = gen_server:call(magicdb, {getTables, "routecomplete"}),
+    Tables = gen_server:call(magicdb, {getTables, ?DATABASE}),
     Data = [{tables, lists:sort(Tables)}, {pretty, fun pretty_name/1}],
     case gen_server:call(evotemplate, {run, tableList, Data, run_raw}) of
         {ok, Result} -> {ok, ?CONTENT_TYPE, "Tables", Result};
@@ -95,12 +98,16 @@ pretty_name(Name) ->
 
 format_db_value({_Col, null}) ->
     {tags, [{"<div class=\"null\">", "null", "</div>"}]};
-format_db_value({_Col, Val}) when is_integer(Val) ->
+format_db_value({Col, Val}) when is_integer(Val) ->
     {tags, [{"<div class=\"number\">", integer_to_list(Val), "</div>"}]};
 format_db_value({_Col, Val}) when is_float(Val) ->
     {tags, [{lists:flatten(io_lib:format("<div class=\"number\" title=\"~p\">", [Val])), 
              lists:flatten(io_lib:format("~.2f", [Val])), 
              "</div>"}]};
+format_db_value({_Col, [C|_]=Val}) when is_integer(C) ->
+    Val;
+format_db_value({_Col, []}) ->
+    "";
 format_db_value({_Col, Val}) ->
     lists:flatten(io_lib:format("~p", [Val])).
 
