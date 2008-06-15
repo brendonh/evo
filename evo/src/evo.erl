@@ -5,6 +5,8 @@
 
 -include("evo.hrl").
 
+-define(MAX_LINE, 80).
+
 run_file(Filename, InitialData) ->
     run_file(Filename, InitialData, true).
 
@@ -227,9 +229,9 @@ emitChildren(State, true) ->
                       {Child, NS2} = emitTag(NS),
                       case NS2 of
                           none ->
-                              {Parent, [Child|Children]};
+                              {Parent, maybe_append(Child, Children)};
                           _ ->
-                              {NS2#state.parent, [Child|Children]}
+                              {NS2#state.parent, maybe_append(Child, Children)}
                       end;
                   _ ->
                       {Child, _} = emitTag(S),
@@ -238,6 +240,11 @@ emitChildren(State, true) ->
       end,
       {State, []},
       lists:reverse(State#state.children)).
+
+
+maybe_append("", Children) -> Children;
+maybe_append(" ", Children) -> Children;
+maybe_append(Other, Children) -> [Other|Children].
 
 
 renderTag(State) ->
@@ -319,7 +326,7 @@ partial_flatten(Stuff) when is_list(Stuff) ->
 
 indent({Tag, [C1|_]=Content, End}, Indent) when is_integer(C1) ->
     TotalLen = length(Tag) + length(Content) + length(End),
-    case TotalLen < 40 of
+    case TotalLen < ?MAX_LINE of
         true ->
             [{spaces(Indent), Tag, Content, End}];
         false ->
@@ -339,7 +346,7 @@ indent([C1|_]=Line, Indent) when is_integer(C1) ->
     end;
 indent(Lines, Indent) ->
     lists:map(fun(L) -> indent(L, Indent) end, Lines).
-
+  
 
 noindent({Tag, [C1|_]=Content, End}) when is_integer(C1) ->
     [Tag, Content, End];

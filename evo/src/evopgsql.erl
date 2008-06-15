@@ -95,10 +95,7 @@ template(tableList) -> atom_to_list('
 <ul class="tableList" e:render="foreach" e:key="tables">
   <li>
     <e:attr name="class" e:render="data" e:dataExp="OddEven" />
-    <a>
-     <e:attr name="href" e:render="data">/tables/</e:attr>
-     <e:slot e:format="pretty" />
-    </a>
+    <a><e:attr name="href" e:render="data">/tables/</e:attr><e:slot e:format="pretty" /></a>
   </li>
 </ul>
 ').
