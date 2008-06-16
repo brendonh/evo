@@ -10,7 +10,8 @@ VPATH = ../ebin
 ERL = erl -boot start_clean
 
 MODS = utf8 evoxml evorender evo evotest evorun \
-	evotemplate evopgsql
+	evotemplate evopgsql \
+    evo_entry evo_app evo_sup evosite_sup evosite evotable
 
 all: compile
 

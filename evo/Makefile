@@ -21,6 +21,14 @@ test: compile
 run: compile
 	erl -noshell -pa ebin -s evorun run -s init stop
 
+site: compile
+	erl -boot start_sasl \
+		-pa ebin \
+		-pa ../mochiweb/ebin \
+		-pa ../RouteComplete/avl-common/ebin \
+		-config evo.config \
+		-s evo_entry start
+
 pgsql: compile
 	erl -pa ebin \
 		-pa ../mochiweb/ebin \
