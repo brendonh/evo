@@ -11,7 +11,9 @@ ERL = erl -boot start_clean
 
 MODS = utf8 evoxml evorender evo evotest evorun \
 	evotemplate evopgsql \
-    evo_entry evo_app evo_sup evosite_sup evosite evotable
+    evo_entry evo_app evo_sup evosite_sup evosite \
+	evostatic evotable
+
 
 all: compile
 

@@ -40,7 +40,7 @@ start_link({SiteName, _Port, _StaticRoot, _DBInfo}=SiteSpec) ->
 %% to find out about restart strategy, maximum restart frequency and child 
 %% specifications.
 %%--------------------------------------------------------------------
-init([{SiteName, Port, StaticRoot, {DB, User, Pass}}]) ->
+init([{SiteName, Port, {DB, User, Pass}, Components}]) ->
 
     DSN = lists:flatten(io_lib:format("DSN=~s;UID=~s;PWD=~s", [DB, User, Pass])),
 
@@ -57,7 +57,7 @@ init([{SiteName, Port, StaticRoot, {DB, User, Pass}}]) ->
     MagicDB = {MagicName, {magicdb, start_link, [{dsn, DSN}, {local, MagicName}]},
                permanent,2000,worker,[magicdb]},
 
-    EvoSite = {EvoName, {evosite, start_link, [EvoName, StaticRoot]},
+    EvoSite = {EvoName, {evosite, start_link, [EvoName, Components]},
                permanent,2000,worker,[evosite]},
 
     % Allow ten crashes per minute

@@ -18,7 +18,7 @@
 
 -record(state, {
   siteName,
-  staticRoot = "static",
+  components,
   contentType = "text/html; charset=utf-8"
 }).
 
@@ -29,8 +29,8 @@
 %% Function: start_link() -> {ok,Pid} | ignore | {error,Error}
 %% Description: Starts the server
 %%--------------------------------------------------------------------
-start_link(SiteName, StaticRoot) ->
-    gen_server:start_link({local, SiteName}, ?MODULE, [SiteName, StaticRoot], []).
+start_link(SiteName, Components) ->
+    gen_server:start_link({local, SiteName}, ?MODULE, [SiteName, Components], []).
 
 %%====================================================================
 %% gen_server callbacks
@@ -43,10 +43,14 @@ start_link(SiteName, StaticRoot) ->
 %%                         {stop, Reason}
 %% Description: Initiates the server
 %%--------------------------------------------------------------------
-init([SiteName, StaticRoot]) ->
+init([SiteName, Components]) ->
+    ComponentTable = ets:new(list_to_atom(atom_to_list(SiteName) ++ "_components"), [private, set]),
+    lists:map(
+      fun({Path, {Mod, Args}}) -> ets:insert(ComponentTable, {Path, Mod:new(Args)}) end,
+      Components),
     cr:dbg({evosite_running, SiteName}),
     {ok, #state{siteName=SiteName,
-                staticRoot=StaticRoot}}.
+                components=ComponentTable}}.
 
 %%--------------------------------------------------------------------
 %% Function: %% handle_call(Request, From, State) -> {reply, Reply, State} |
@@ -59,9 +63,14 @@ init([SiteName, StaticRoot]) ->
 %%--------------------------------------------------------------------
 
 handle_call({respond, Req}, _From, State) ->
-    cr:dbg({call, State#state.siteName, Req:get(path)}),
+    SplitPath = string:tokens(Req:get(path), "/"),
+    Path = case lists:last(Req:get(path)) == $/ of
+               true -> SplitPath ++ [""];
+               false -> SplitPath
+           end,
+    Response = get_response(State, Req, Path),
     Req:cleanup(),
-    {reply, Req:ok({State#state.contentType, <<"Hi.">>}), State};
+    {reply, Response, State};
 
 handle_call(Request, _From, State) ->
     cr:dbg({unknown_call, Request}),
@@ -107,39 +116,19 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%--------------------------------------------------------------------
 
-
-
-%-define(DSN, "DSN=routecomplete_dev;UID=routecomplete;PWD=secret").
-%-define(DATABASE, "routecomplete").
-
-
-%start([Port, DB, User, Pass]) ->
-%    start(atom_to_list(Port), 
-%          lists:flatten(io_lib:format("DSN=~s;UID=~s;PWD=~s", [DB, User, Pass]))).
-
-%start(Port, DSN) ->
-%    cr:start_link(),
-%    cr:dbg({evosite, running}),
-%    receive
-%        finish -> ok
-%    end.
-
-%request(Req) ->
-%    Bits = string:tokens(Req:get(path), "/"),
-%    Real = case lists:last(Req:get(path)) == $/ of
-%               true -> Bits ++ [""];
-%               false -> Bits
-%           end,
-%    
-%    case dispatch(Req, Req:get(method), Real) of
-%        {ok, Type, Title, Result} ->
-%            SiteData = [{title, Title}, {content, Result}],
-%            case gen_server:call(evotemplate, {run, site, SiteData}) of
-%                {ok, Final} -> Req:ok({Type, Final});
-%                {error, Error} -> Req:ok({?CONTENT_TYPE, Error})
-%            end;
-%        {other, Result} ->
-%            Result;
-%        _ ->
-%            Req:respond({500, [], <<"Internal error">>})
-%    end.
+get_response(State, Req, [Top|Rest]=Path) ->
+    cr:dbg({responding_to, Top, Path}),
+    case ets:lookup(State#state.components, Top) of
+        [] -> Req:not_found();
+        [{Top, Component}] -> run_responders(Req, Component, Rest)
+    end.
+                
+run_responders(Req, Component, Args) ->
+    case catch Component:respond(Req, [Args]) of
+        {response, Response} -> 
+            Response;
+        {child, NewComponent, NewArgs} -> 
+            run_responders(Req, NewComponent, NewArgs);
+        {'EXIT', Reason} ->
+            Req:ok({"text/plain", lists:flatten(io_lib:format("Error: ~p~n", [Reason]))})
+    end.
