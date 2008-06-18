@@ -200,7 +200,7 @@ template(State, detailEdit) ->
         auto -> auto_template(tableContent);
         _ -> State#state.editTemplate
     end.
-           
+
 
 auto_template(tableList) -> atom_to_list('
 <ul class="tableList" e:render="foreach" e:key="tables">

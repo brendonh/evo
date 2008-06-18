@@ -57,7 +57,7 @@ start_site(Site) ->
     supervisor:start_child(?MODULE, spec_from_site(Site)).
 
 
-spec_from_site({SiteName, _Port, _Root, _DB}=Site) ->
+spec_from_site({SiteName, _Conf}=Site) ->
     {concat_atoms([SiteName, "_sup"]),
      {evosite_sup, start_link, [Site]},
      permanent,2000,worker,[evosite_sup]}.

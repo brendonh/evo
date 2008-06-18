@@ -19,6 +19,7 @@
 -record(state, {
   siteName,
   components,
+  templates,
   contentType = "text/html; charset=utf-8"
 }).
 
@@ -43,14 +44,15 @@ start_link(SiteName, Components) ->
 %%                         {stop, Reason}
 %% Description: Initiates the server
 %%--------------------------------------------------------------------
-init([SiteName, Components]) ->
-    ComponentTable = ets:new(list_to_atom(atom_to_list(SiteName) ++ "_components"), [private, set]),
+init([EvoName, SiteConf]) ->
+    ComponentTable = ets:new(list_to_atom(atom_to_list(EvoName) ++ "_components"), [private, set]),
     lists:map(
       fun({Path, {Mod, Args}}) -> ets:insert(ComponentTable, {Path, Mod:new(Args)}) end,
-      Components),
-    cr:dbg({evosite_running, SiteName}),
-    {ok, #state{siteName=SiteName,
-                components=ComponentTable}}.
+      proplists:get_value(components, SiteConf, [])),
+    cr:dbg({evosite_running, EvoName}),
+    {ok, #state{siteName=EvoName,
+                components=ComponentTable,
+                templates=proplists:get_value(templates, SiteConf, [])}}.
 
 %%--------------------------------------------------------------------
 %% Function: %% handle_call(Request, From, State) -> {reply, Reply, State} |

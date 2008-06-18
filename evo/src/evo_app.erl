@@ -10,7 +10,7 @@
 -behaviour(application).
 
 %% Application callbacks
--export([startcr/0, start/2, stop/1]).
+-export([start/2, stop/1]).
 
 %%====================================================================
 %% Application callbacks
@@ -46,10 +46,3 @@ stop(_State) ->
 %%====================================================================
 %% Internal functions
 %%====================================================================
-
-startcr() ->
-    case error_logger:add_report_handler(cr) of
-        ok -> ok;
-        Error -> io:format("OH NO: ~p~n", [Error])
-    end.
-

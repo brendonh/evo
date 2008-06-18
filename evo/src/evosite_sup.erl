@@ -17,6 +17,8 @@
 
 -define(SERVER, ?MODULE).
 
+-define(DEFAULT_PORT, 80).
+
 %%====================================================================
 %% API functions
 %%====================================================================
@@ -24,7 +26,7 @@
 %% Function: start_link() -> {ok,Pid} | ignore | {error,Error}
 %% Description: Starts the supervisor
 %%--------------------------------------------------------------------
-start_link({SiteName, _Port, _StaticRoot, _DBInfo}=SiteSpec) ->
+start_link({SiteName, SiteConf}=SiteSpec) ->
     SupName = concat_atoms(["evosite_", SiteName, "_sup"]),
     supervisor:start_link({local, SupName}, ?MODULE, [SiteSpec]).
 
@@ -40,28 +42,41 @@ start_link({SiteName, _Port, _StaticRoot, _DBInfo}=SiteSpec) ->
 %% to find out about restart strategy, maximum restart frequency and child 
 %% specifications.
 %%--------------------------------------------------------------------
-init([{SiteName, Port, {DB, User, Pass}, Components}]) ->
-
-    DSN = lists:flatten(io_lib:format("DSN=~s;UID=~s;PWD=~s", [DB, User, Pass])),
+init([{SiteName, SiteConf}]) ->
 
     EvoName = concat_atoms(["evosite_", SiteName]),
+
     MochiName = concat_atoms([EvoName, "_mochiweb"]),
-    MagicName = concat_atoms([EvoName, "_magicdb"]),
 
     Mochiweb = {MochiName, {mochiweb_http, start,
                             [[{name, MochiName},
-                              {port, Port}, 
+                              {port, proplists:get_value(port, SiteConf, ?DEFAULT_PORT)}, 
                               {loop, make_loop(EvoName)}]]},
                 permanent,2000,worker,[mochiweb_socket_server]},
 
-    MagicDB = {MagicName, {magicdb, start_link, [{dsn, DSN}, {local, MagicName}]},
-               permanent,2000,worker,[magicdb]},
+    Bits = [Mochiweb],
 
-    EvoSite = {EvoName, {evosite, start_link, [EvoName, Components]},
+    case proplists:get_value(dbinfo, SiteConf) of
+        {DB, User, Pass} ->
+            DSN = lists:flatten(io_lib:format("DSN=~s;UID=~s;PWD=~s", [DB, User, Pass])),
+            MagicName = concat_atoms([EvoName, "_magicdb"]),
+            MagicDB = {MagicName, {magicdb, start_link, [{dsn, DSN}, {local, MagicName}]},
+                       permanent,2000,worker,[magicdb]},
+            Bits2 = [MagicDB|Bits];
+        undefined ->
+            Bits2 = Bits;
+        Other ->
+            cr:dbg({invalid_dbinfo, Other}),
+            Bits2 = Bits
+    end,
+
+    EvoSite = {EvoName, {evosite, start_link, [EvoName, SiteConf]},
                permanent,2000,worker,[evosite]},
 
+    Bits3 = [EvoSite|Bits2],
+
     % Allow ten crashes per minute
-    {ok,{{one_for_one,10,60}, [Mochiweb, MagicDB, EvoSite]}}.
+    {ok,{{one_for_one,10,60}, Bits3}}.
 
 %%====================================================================
 %% Internal functions
