@@ -10,7 +10,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/1]).
+-export([start_link/1, start_link/2]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -27,7 +27,11 @@
 %% Function: start_link() -> {ok,Pid} | ignore | {error,Error}
 %% Description: Starts the server
 %%--------------------------------------------------------------------
-start_link({_, _}=TemplateCallback) ->
+
+start_link(Name, TemplateCallback) ->
+    gen_server:start_link({local, Name}, ?MODULE, [Name, TemplateCallback], []).
+
+start_link(TemplateCallback) ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [TemplateCallback], []).
 
 %%====================================================================
@@ -41,9 +45,16 @@ start_link({_, _}=TemplateCallback) ->
 %%                         {stop, Reason}
 %% Description: Initiates the server
 %%--------------------------------------------------------------------
+
+init([EvoName, TemplateCallback]) ->
+    Name = list_to_atom(atom_to_list(EvoName) ++ "_templateCache"),
+    ets:new(Name, [private, set, named_table]),
+    cr:dbg({evotemplate, EvoName, running}),
+    {ok, #state{templateCallback=TemplateCallback}};
+
 init([TemplateCallback]) ->
     ets:new(templateCache, [private, set, named_table]),
-    cr:dbg({evotemplate, running}),
+    cr:dbg({evotemplate, singleton, running}),
     {ok, #state{templateCallback=TemplateCallback}}.
 
 %%--------------------------------------------------------------------
@@ -56,36 +67,18 @@ init([TemplateCallback]) ->
 %% Description: Handling call messages
 %%--------------------------------------------------------------------
 
-handle_call({run, TemplateName, Data}, _From, State) ->
-    handle_call({run, TemplateName, Data, run}, _From, State);
+handle_call({Command, {reload, TemplateName}, Data}, _From, State) ->
+    ets:delete(templateCache, TemplateName),
+    handle_call({Command, TemplateName, Data}, _From, State);
 
-handle_call({run, TemplateName, Data, Command}, From, State) ->
+handle_call({Command, TemplateName, Data}, _From, State) ->
     case ets:lookup(templateCache, TemplateName) of
-        [] ->
-            cr:dbg({generating, TemplateName}),
-            {Mod, Func} = State#state.templateCallback,
-            Content = apply(Mod, Func, [TemplateName]),
-            Template = spawn(fun() -> evo:prepare(Content) end),
-            cr:dbg({template, Template}),
-            ets:insert(templateCache, {TemplateName, Template});
+        [] -> Template = generate_template(State, TemplateName);
         [{TemplateName, Template}] -> ok
     end,
-    case Command of
-        run ->
-            Template ! {run, Data, true, self()};
-        run_raw ->
-            Template ! {run_raw, Data, self()}
-    end,
-    receive
-        {Template, result, R} ->
-            Result = {ok, R};
-        {'EXIT', _, Error} ->
-            Result = {error, Error}
-    after 3000 ->
-            exit(Template, too_slow),
-            cr:dbg({killing, TemplateName}),
-            ets:delete(templateCache, TemplateName),
-            Result = {error, "Template too slow"}
+    case Template of
+        not_found -> Result = {error, {TemplateName, not_found}};
+        _ ->  Result = run_template(Command, TemplateName, Template, Data)
     end,
     {reply, Result, State};
 
@@ -131,3 +124,36 @@ code_change(_OldVsn, State, _Extra) ->
 %%--------------------------------------------------------------------
 %%% Internal functions
 %%--------------------------------------------------------------------
+
+generate_template(State, TemplateName) ->
+    cr:dbg({generating, TemplateName}),
+    Callback = State#state.templateCallback,
+    case Callback(TemplateName) of
+        not_found -> not_found;
+        Content ->
+            Template = spawn(fun() -> evo:prepare(Content) end),
+            ets:insert(templateCache, {TemplateName, Template}),
+            Template
+    end.
+
+
+run_template(run, Name, Template, Data) ->
+    Template ! {run, Data, true, self()},
+    get_result(Name, Template);
+run_template(run_raw, Name, Template, Data) ->
+    Template ! {run_raw, Data, self()},
+    get_result(Name, Template). 
+
+
+get_result(TemplateName, Template) ->
+    receive
+        {Template, result, R} ->
+            {ok, R};
+        {'EXIT', _, Error} ->
+            {error, Error}
+    after 3000 ->
+            exit(Template, too_slow),
+            cr:dbg({killing, TemplateName}),
+            ets:delete(templateCache, TemplateName),
+            {error, "Template too slow"}
+    end.

@@ -20,6 +20,7 @@
   siteName,
   components,
   templates,
+  templateServer,
   contentType = "text/html; charset=utf-8"
 }).
 
@@ -30,8 +31,8 @@
 %% Function: start_link() -> {ok,Pid} | ignore | {error,Error}
 %% Description: Starts the server
 %%--------------------------------------------------------------------
-start_link(SiteName, Components) ->
-    gen_server:start_link({local, SiteName}, ?MODULE, [SiteName, Components], []).
+start_link(SiteName, Conf) ->
+    gen_server:start_link({local, SiteName}, ?MODULE, [SiteName, Conf], []).
 
 %%====================================================================
 %% gen_server callbacks
@@ -45,14 +46,21 @@ start_link(SiteName, Components) ->
 %% Description: Initiates the server
 %%--------------------------------------------------------------------
 init([EvoName, SiteConf]) ->
+    process_flag(trap_exit, true),
     ComponentTable = ets:new(list_to_atom(atom_to_list(EvoName) ++ "_components"), [private, set]),
-    lists:map(
-      fun({Path, {Mod, Args}}) -> ets:insert(ComponentTable, {Path, Mod:new(Args)}) end,
-      proplists:get_value(components, SiteConf, [])),
+
+    lists:map(fun({Path, Type, Args}) ->
+                      ets:insert(ComponentTable, {Path, get_callback(EvoName, Type, Args)})
+              end,
+              proplists:get_value(components, SiteConf, [])),
+
+    TemplateServer = list_to_atom(atom_to_list(EvoName) ++ "_evotemplate"),
+
     cr:dbg({evosite_running, EvoName}),
     {ok, #state{siteName=EvoName,
                 components=ComponentTable,
-                templates=proplists:get_value(templates, SiteConf, [])}}.
+                templates=proplists:get_value(templates, SiteConf, []),
+                templateServer=TemplateServer}}.
 
 %%--------------------------------------------------------------------
 %% Function: %% handle_call(Request, From, State) -> {reply, Reply, State} |
@@ -118,19 +126,56 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%--------------------------------------------------------------------
 
+get_callback(_EvoName, module, {Mod, InitArgs}) ->
+    Instance = Mod:new(InitArgs),
+    fun(Req, Method, Args) -> Instance:respond(Req, Method, Args) end;
+get_callback(EvoName, gen_server, {_Mod, Name, _InitArgs}) ->
+    get_callback(EvoName, gen_server, Name);
+get_callback(EvoName, gen_server, Name) ->
+    CompName = concat_atoms([EvoName, "_component_", Name]),
+    fun(Req, Method, Args) -> gen_server:call(CompName, {respond, Req, Method, Args}) end.
+
 get_response(State, Req, [Top|Rest]=Path) ->
     cr:dbg({responding_to, Top, Path}),
-    case ets:lookup(State#state.components, Top) of
+    get_response(State, Req, Top, Rest).
+
+get_response(State, Req, Name, Args) ->
+    case ets:lookup(State#state.components, Name) of
         [] -> Req:not_found();
-        [{Top, Component}] -> run_responders(Req, Component, Rest)
+        [{Name, Callback}] -> run_responders(State, Req, Callback, Args)
     end.
-                
-run_responders(Req, Component, Args) ->
-    case catch Component:respond(Req, [Args]) of
+
+run_responders(State, Req, Callback, Args) ->
+    case catch Callback(Req, Req:get(method), Args) of
         {response, Response} -> 
             Response;
+        {wrap, TemplateName, Data} ->
+            wrap_template(State, Req, TemplateName, Data);
         {child, NewComponent, NewArgs} -> 
-            run_responders(Req, NewComponent, NewArgs);
-        {'EXIT', Reason} ->
-            Req:ok({"text/plain", lists:flatten(io_lib:format("Error: ~p~n", [Reason]))})
+            run_responders(State, Req, NewComponent, NewArgs);
+        {'EXIT', Error} ->
+            Req:ok({"text/plain", lists:flatten(io_lib:format("Error: ~p~n", [Error]))})
     end.
+
+wrap_template(State, Req, TemplateName, Data) ->
+    case proplists:get_value(TemplateName, State#state.templates) of
+        undefined ->
+            Req:ok("text/plain", "Site template not found: " ++ atom_to_list(TemplateName));
+        {Type, TemplateConf} ->
+            case gen_server:call(State#state.templateServer, 
+                                 {run, TemplateConf, Data}) of
+                {ok, Final} -> Req:ok({Type, Final});
+                {error, Error} -> Req:ok({"text/plain", Error})
+            end
+    end.
+
+
+concat_atoms(Bits) ->
+    concat_atoms(Bits, []).
+
+concat_atoms([], Acc) -> 
+    list_to_atom(lists:flatten(lists:reverse(Acc)));
+concat_atoms([Atom|Rest], Acc) when is_atom(Atom) ->
+    concat_atoms(Rest, [atom_to_list(Atom)|Acc]);
+concat_atoms([String|Rest], Acc) ->
+    concat_atoms(Rest, [String|Acc]).

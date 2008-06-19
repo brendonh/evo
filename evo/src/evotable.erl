@@ -10,11 +10,14 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/1, start_link/2, start_link/3]).
+-export([start_link/2]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
+
+% Temporary
+-define(MAGICDB, evosite_routecomplete_magicdb).
 
 -record(state, {
 
@@ -23,8 +26,8 @@
  viewTemplate,
  editTemplate,
 
- columns,
- templates,
+ columns = [],
+ templates = [],
 
  pageSize = 20
 
@@ -37,14 +40,8 @@
 %% Function: start_link() -> {ok,Pid} | ignore | {error,Error}
 %% Description: Starts the server
 %%--------------------------------------------------------------------
-start_link(Table) ->
-    start_link(Table, all).
-
-start_link(Table, ListCols) ->
-    start_link(Table, ListCols, {auto, auto}).
-
-start_link(Table, ListCols, {View, Edit}) ->
-    gen_server:start_link({local, Table}, ?MODULE, [Table, ListCols, {View, Edit}], []).
+start_link(Name, Args) ->
+    gen_server:start_link({local, Name}, ?MODULE, Args, []).
 
 %%====================================================================
 %% gen_server callbacks
@@ -58,7 +55,7 @@ start_link(Table, ListCols, {View, Edit}) ->
 %% Description: Initiates the server
 %%--------------------------------------------------------------------
 init([Table, ListCols, {View, Edit}]) ->
-    gen_server:cast(self(), regenerate),
+    gen_server:cast(self(), reload_columns),
     {ok, #state{table=Table,
                 listCols=ListCols,
                 viewTemplate=View,
@@ -74,32 +71,43 @@ init([Table, ListCols, {View, Edit}]) ->
 %% Description: Handling call messages
 %%--------------------------------------------------------------------
 
-handle_call({'GET', []}, _From, State) ->
+handle_call({respond, Req, 'GET', []}, _From, State) ->
+    Response = Req:respond({302, [{<<"Location">>, "/customers/1"}], <<"">>}),
+    {reply, {response, Response}, State};
+
+handle_call({respond, Req, 'GET', [PageStr]}, _From, State) ->
+   
     Table = State#state.table,
     Columns = State#state.columns,
     ColNames = lists:map(fun({K,_V}) -> K end, Columns),
 
     PageSize = State#state.pageSize,
 
-    Rows = gen_server:call(magicdb, {getRows, Table, [], {PageSize, 0}}),
+    Page = list_to_integer(PageStr),
+    OffsetIndex = Page - 1,
+
+    Rows = gen_server:call(?MAGICDB, {getRows, Table, [], {PageSize, PageSize*OffsetIndex}}),
 
     Data = [{columns, ColNames}, {rows, Rows}, 
             {table, Table},
-            {db_value, fun format_db_value/1}],
+            {db_value, fun format_db_value/1},
+            {page, Page},
+            {pageLink, fun page_link/3}],
 
-    Template = get_template(State, list),
+    {Template, NewState} = get_template(State, list),
 
-    Template ! {run_raw, Data, self()},
+    Template ! {run, Data, true, self()},
 
-    receive
-        {Template, result, Result} -> ok
+    Reply = receive
+        {Template, result, Result} ->
+                     Req:ok({"text/html", Result})
     after 3000 ->
             cr:dbg({died_waiting_for_template, list}),
             exit(Template, too_slow),
-            Result = none
+            Req:ok({"text/plain", "Template died"})
     end,
 
-    {reply, {ok, Result}, State};
+    {reply, {response, Reply}, NewState};
    
 
 handle_call(_Request, _From, State) ->
@@ -115,7 +123,7 @@ handle_call(_Request, _From, State) ->
 handle_cast(reload_columns, State) ->
     Table = State#state.table,
     cr:dbg({reloading_columns, Table}),
-    Columns = gen_server:call(magicdb, {getColumns, Table}),
+    Columns = gen_server:call(?MAGICDB, {getColumns, Table}),
     {noreply, State#state{columns=Columns}};
 
 handle_cast(_Msg, State) ->
@@ -164,12 +172,6 @@ get_template(State, Name) ->
             {Template, State}
     end.
 
-% - Render list (GET)
-%   - AJAX per-column search
-% - Render details (GET)
-% - Render edit screen (GET)
-% - Save (POST)
-
 format_db_value({_Col, null}) ->
     {tags, [{"<div class=\"null\">", "null", "</div>"}]};
 format_db_value({_Col, Val}) when is_integer(Val) ->
@@ -186,8 +188,21 @@ format_db_value({_Col, Val}) ->
     lists:flatten(io_lib:format("~p", [Val])).
 
 
+page_link(Data, Offset, Label) ->
+    Table = proplists:get_value(table, Data),
+    Page = proplists:get_value(page, Data) + list_to_integer(Offset),
+    case Page of
+        I when I < 1 ->
+            Label;
+        _ ->
+            {tags, [{lists:flatten(io_lib:format("<a href=\"/~s/~B\">", [Table, Page])),
+                     Label,
+                     "</a>"}]}
+    end.
+
+
 template(_State, list) ->
-    auto_template(tableList);
+    auto_template(tableContent);
 
 template(State, detailView) ->
     case State#state.viewTemplate of

@@ -1,6 +1,6 @@
 -module(evostatic, [DocRoot]).
 
--export([respond/2]).
+-export([respond/3]).
 
-respond(Req, [PathBits]) ->
+respond(Req, 'GET', PathBits) ->
     {response, Req:serve_file(string:join(PathBits, "/"), DocRoot)}.

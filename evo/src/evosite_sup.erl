@@ -26,7 +26,7 @@
 %% Function: start_link() -> {ok,Pid} | ignore | {error,Error}
 %% Description: Starts the supervisor
 %%--------------------------------------------------------------------
-start_link({SiteName, SiteConf}=SiteSpec) ->
+start_link({SiteName, _Conf}=SiteSpec) ->
     SupName = concat_atoms(["evosite_", SiteName, "_sup"]),
     supervisor:start_link({local, SupName}, ?MODULE, [SiteSpec]).
 
@@ -46,41 +46,62 @@ init([{SiteName, SiteConf}]) ->
 
     EvoName = concat_atoms(["evosite_", SiteName]),
 
-    MochiName = concat_atoms([EvoName, "_mochiweb"]),
+    Bits = lists:concat(
+             lists:map(
+               fun (B) -> start(B, EvoName, SiteConf) end,
+               [mochiweb, magicdb, evosite, evotemplate, components])),
 
-    Mochiweb = {MochiName, {mochiweb_http, start,
-                            [[{name, MochiName},
-                              {port, proplists:get_value(port, SiteConf, ?DEFAULT_PORT)}, 
-                              {loop, make_loop(EvoName)}]]},
-                permanent,2000,worker,[mochiweb_socket_server]},
-
-    Bits = [Mochiweb],
-
-    case proplists:get_value(dbinfo, SiteConf) of
-        {DB, User, Pass} ->
-            DSN = lists:flatten(io_lib:format("DSN=~s;UID=~s;PWD=~s", [DB, User, Pass])),
-            MagicName = concat_atoms([EvoName, "_magicdb"]),
-            MagicDB = {MagicName, {magicdb, start_link, [{dsn, DSN}, {local, MagicName}]},
-                       permanent,2000,worker,[magicdb]},
-            Bits2 = [MagicDB|Bits];
-        undefined ->
-            Bits2 = Bits;
-        Other ->
-            cr:dbg({invalid_dbinfo, Other}),
-            Bits2 = Bits
-    end,
-
-    EvoSite = {EvoName, {evosite, start_link, [EvoName, SiteConf]},
-               permanent,2000,worker,[evosite]},
-
-    Bits3 = [EvoSite|Bits2],
-
-    % Allow ten crashes per minute
-    {ok,{{one_for_one,10,60}, Bits3}}.
+    {ok,{{one_for_one,10,60}, Bits}}.
 
 %%====================================================================
 %% Internal functions
 %%====================================================================
+
+start(mochiweb, EvoName, SiteConf) ->
+    MochiName = concat_atoms([EvoName, "_mochiweb"]),
+    [{MochiName, {mochiweb_http, start,
+                  [[{name, MochiName},
+                    {port, proplists:get_value(port, SiteConf, ?DEFAULT_PORT)}, 
+                    {loop, make_loop(EvoName)}]]},
+      permanent,2000,worker,[mochiweb_socket_server]}];
+
+start(magicdb, EvoName, SiteConf) ->
+    case proplists:get_value(dbinfo, SiteConf) of
+        {DB, User, Pass} ->
+            DSN = lists:flatten(io_lib:format("DSN=~s;UID=~s;PWD=~s", [DB, User, Pass])),
+            MagicName = concat_atoms([EvoName, "_magicdb"]),
+            [{MagicName, {magicdb, start_link, [{dsn, DSN}, {local, MagicName}]},
+              permanent,2000,worker,[magicdb]}];
+        undefined ->
+            [];
+        Other ->
+            cr:dbg({invalid_dbinfo, Other}),
+            []              
+    end;
+
+start(evosite, EvoName, SiteConf) ->
+    [{EvoName, {evosite, start_link, [EvoName, SiteConf]},
+      permanent,2000,worker,[evosite]}];
+
+start(evotemplate, EvoName, _SiteConf) ->
+    TemplateServerName = concat_atoms([EvoName, "_evotemplate"]),
+    Callback = fun(T) -> gen_server:call(EvoName, {template, T}) end,
+    [{TemplateServerName, 
+      {evotemplate, start_link, [TemplateServerName, Callback]},
+      permanent,5000,worker,[evotemplate]}];
+
+start(components, EvoName, SiteConf) ->
+    lists:concat(
+      lists:map(
+        fun({Path, Type, Args}) -> init_component(EvoName, Type, Args) end,
+        proplists:get_value(components, SiteConf, []))).
+
+init_component(EvoName, gen_server, {Mod, Name, InitArgs}) ->
+    CompName = concat_atoms([EvoName, "_component_", Name]),
+    [{CompName, {Mod, start_link, [CompName, InitArgs]},
+      permanent,2000,worker,[Mod]}];
+init_component(_EvoName, gen_server, _Name) -> [];
+init_component(_EvoName, module, {_Mod, _InitArgs}) ->  [].
 
 make_loop(EvoName) ->
     fun(Req) -> gen_server:call(EvoName, {respond, Req}) end.
