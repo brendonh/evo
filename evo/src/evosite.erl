@@ -10,17 +10,17 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/2]).
+-export([start_link/2, db/2, template/2]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
 
 -record(state, {
-  siteName,
+  evoname,
   components,
   templates,
-  templateServer,
+  templateCallback,
   contentType = "text/html; charset=utf-8"
 }).
 
@@ -34,6 +34,14 @@
 start_link(SiteName, Conf) ->
     gen_server:start_link({local, SiteName}, ?MODULE, [SiteName, Conf], []).
 
+db(EvoName, Args) ->
+    MagicName = evoutil:concat_atoms([EvoName, "_magicdb"]),
+    gen_server:call(MagicName, Args).
+
+template(EvoName, Args) ->
+    TemplateServerName = evoutil:concat_atoms([EvoName, "_evotemplate"]),
+    gen_server:call(TemplateServerName, Args).
+
 %%====================================================================
 %% gen_server callbacks
 %%====================================================================
@@ -46,21 +54,27 @@ start_link(SiteName, Conf) ->
 %% Description: Initiates the server
 %%--------------------------------------------------------------------
 init([EvoName, SiteConf]) ->
-    process_flag(trap_exit, true),
-    ComponentTable = ets:new(list_to_atom(atom_to_list(EvoName) ++ "_components"), [private, set]),
+
+    ComponentTable = ets:new(evoutil:concat_atoms([EvoName, "_components"]), [private, set]),
 
     lists:map(fun({Path, Type, Args}) ->
                       ets:insert(ComponentTable, {Path, get_callback(EvoName, Type, Args)})
               end,
               proplists:get_value(components, SiteConf, [])),
 
-    TemplateServer = list_to_atom(atom_to_list(EvoName) ++ "_evotemplate"),
+    Templates = proplists:get_value(templates, SiteConf, []),
+    Callback = fun(Name) -> 
+                       case proplists:get_value(Name, Templates, not_found) of
+                           not_found -> not_found;
+                           {_Type, _Reload, Filename} -> {file, Filename}
+                       end
+               end,
 
     cr:dbg({evosite_running, EvoName}),
-    {ok, #state{siteName=EvoName,
+    {ok, #state{evoname=EvoName,
                 components=ComponentTable,
-                templates=proplists:get_value(templates, SiteConf, []),
-                templateServer=TemplateServer}}.
+                templates=Templates,
+                templateCallback=Callback}}.
 
 %%--------------------------------------------------------------------
 %% Function: %% handle_call(Request, From, State) -> {reply, Reply, State} |
@@ -73,11 +87,7 @@ init([EvoName, SiteConf]) ->
 %%--------------------------------------------------------------------
 
 handle_call({respond, Req}, _From, State) ->
-    SplitPath = string:tokens(Req:get(path), "/"),
-    Path = case lists:last(Req:get(path)) == $/ of
-               true -> SplitPath ++ [""];
-               false -> SplitPath
-           end,
+    Path = string:tokens(Req:get(path), "/"),
     Response = get_response(State, Req, Path),
     Req:cleanup(),
     {reply, Response, State};
@@ -126,23 +136,21 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%--------------------------------------------------------------------
 
-get_callback(_EvoName, module, {Mod, InitArgs}) ->
-    Instance = Mod:new(InitArgs),
+get_callback(EvoName, module, {Mod, InitArgs}) ->
+    Instance = apply(Mod, new, [EvoName|InitArgs]),
     fun(Req, Method, Args) -> Instance:respond(Req, Method, Args) end;
 get_callback(EvoName, gen_server, {_Mod, Name, _InitArgs}) ->
     get_callback(EvoName, gen_server, Name);
 get_callback(EvoName, gen_server, Name) ->
-    CompName = concat_atoms([EvoName, "_component_", Name]),
+    CompName = evoutil:concat_atoms([EvoName, "_component_", Name]),
     fun(Req, Method, Args) -> gen_server:call(CompName, {respond, Req, Method, Args}) end.
 
-get_response(State, Req, [Top|Rest]=Path) ->
-    cr:dbg({responding_to, Top, Path}),
-    get_response(State, Req, Top, Rest).
-
-get_response(State, Req, Name, Args) ->
-    case ets:lookup(State#state.components, Name) of
+get_response(State, Req, []) ->
+    get_response(State, Req, [""]);
+get_response(State, Req, [Top|Rest]) ->
+    case ets:lookup(State#state.components, Top) of
         [] -> Req:not_found();
-        [{Name, Callback}] -> run_responders(State, Req, Callback, Args)
+        [{Top, Callback}] -> run_responders(State, Req, Callback, Rest)
     end.
 
 run_responders(State, Req, Callback, Args) ->
@@ -154,28 +162,33 @@ run_responders(State, Req, Callback, Args) ->
         {child, NewComponent, NewArgs} -> 
             run_responders(State, Req, NewComponent, NewArgs);
         {'EXIT', Error} ->
-            Req:ok({"text/plain", lists:flatten(io_lib:format("Error: ~p~n", [Error]))})
+            display_error(Req, "Error: ~p~n", [Error]);
+        Other ->
+            display_error(Req, "Unknown component response: ~p~n", [Other])
     end.
 
 wrap_template(State, Req, TemplateName, Data) ->
     case proplists:get_value(TemplateName, State#state.templates) of
         undefined ->
-            Req:ok("text/plain", "Site template not found: " ++ atom_to_list(TemplateName));
-        {Type, TemplateConf} ->
-            case gen_server:call(State#state.templateServer, 
-                                 {run, TemplateConf, Data}) of
-                {ok, Final} -> Req:ok({Type, Final});
-                {error, Error} -> Req:ok({"text/plain", Error})
-            end
+            display_error(Req, "Site template not found: ~p~n", [TemplateName]);
+        {Type, reload, _Filename} ->
+            run_wrap_template(State, Req, Type, {reload, TemplateName}, Data);
+        {Type, cache, _Filename} ->
+            run_wrap_template(State, Req, Type, TemplateName, Data);
+        Other ->
+            display_error(Req, "Unknown template config: ~p~n", [Other])
     end.
 
 
-concat_atoms(Bits) ->
-    concat_atoms(Bits, []).
+run_wrap_template(State, Req, Type, TemplateName, Data) ->
+    case template(State#state.evoname, 
+                  {run, TemplateName, Data, 
+                   State#state.templateCallback}) of
+        {ok, Final} -> Req:ok({Type, Final});
+        {error, Error} -> display_error(Req, "Template error: ~p~n", [Error]);
+        Other -> display_error(Req, "Unknown template response: ~p~n", [Other])
+    end.
 
-concat_atoms([], Acc) -> 
-    list_to_atom(lists:flatten(lists:reverse(Acc)));
-concat_atoms([Atom|Rest], Acc) when is_atom(Atom) ->
-    concat_atoms(Rest, [atom_to_list(Atom)|Acc]);
-concat_atoms([String|Rest], Acc) ->
-    concat_atoms(Rest, [String|Acc]).
+
+display_error(Req, Template, Content) ->
+    Req:ok({"text/plain", lists:flatten(io_lib:format(Template, Content))}).

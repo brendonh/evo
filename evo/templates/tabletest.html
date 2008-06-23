@@ -1,0 +1,21 @@
+<div>
+<div class="pageLinks">
+  <e:slot e:format="pageLink -1 Prev" />
+  <e:slot e:format="pageLink +1 Next" />
+</div>
+<div class="tableScroll">
+<table class="dbTable">
+  <tr e:key="columns">
+    <th class="first" e:render="data" e:dataExp="lists:nth(1,D)" />
+    <e:inv e:render="foreach" e:dataExp="lists:nthtail(1,D)"><th e:render="data" /></e:inv>
+  </tr>
+  <tbody e:render="foreach" e:key="rows">
+    <tr>
+      <e:attr name="class" e:render="data" e:dataExp="OddEven" />
+      <td class="first" e:render="data" e:format="db_value" e:dataExp="lists:nth(1,D)" />
+      <e:inv e:render="foreach" e:dataExp="lists:nthtail(1,D)"><td e:render="data" e:format="db_value" /></e:inv>
+    </tr>
+  </tbody>
+</table>
+</div>
+</div>

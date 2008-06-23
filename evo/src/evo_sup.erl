@@ -58,17 +58,6 @@ start_site(Site) ->
 
 
 spec_from_site({SiteName, _Conf}=Site) ->
-    {concat_atoms([SiteName, "_sup"]),
+    {evoutil:concat_atoms([SiteName, "_sup"]),
      {evosite_sup, start_link, [Site]},
      permanent,2000,worker,[evosite_sup]}.
-
-
-concat_atoms(Bits) ->
-    concat_atoms(Bits, []).
-
-concat_atoms([], Acc) -> 
-    list_to_atom(lists:flatten(lists:reverse(Acc)));
-concat_atoms([Atom|Rest], Acc) when is_atom(Atom) ->
-    concat_atoms(Rest, [atom_to_list(Atom)|Acc]);
-concat_atoms([String|Rest], Acc) ->
-    concat_atoms(Rest, [String|Acc]).

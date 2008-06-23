@@ -1,4 +1,4 @@
--module(evostatic, [DocRoot]).
+-module(evostatic, [EvoName, DocRoot]).
 
 -export([respond/3]).
 

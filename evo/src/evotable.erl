@@ -10,24 +10,25 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/2]).
+-export([start_link/3]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
 
-% Temporary
--define(MAGICDB, evosite_routecomplete_magicdb).
+-define(DB(Args), evosite:db(State#state.evoname, Args)).
+-define(Template(C, T, D), evosite:template(State#state.evoname, {C,T,D, State#state.templateCallback})).
 
 -record(state, {
 
+ evoname,
+ name,
+
  table,
  listCols,
- viewTemplate,
- editTemplate,
 
  columns = [],
- templates = [],
+ templateCallback,
 
  pageSize = 20
 
@@ -40,8 +41,9 @@
 %% Function: start_link() -> {ok,Pid} | ignore | {error,Error}
 %% Description: Starts the server
 %%--------------------------------------------------------------------
-start_link(Name, Args) ->
-    gen_server:start_link({local, Name}, ?MODULE, Args, []).
+start_link(EvoName, Name, Args) ->
+    CompName = evoutil:concat_atoms([EvoName, "_component_", Name]),
+    gen_server:start_link({local, CompName}, ?MODULE, [EvoName, Name, Args], []).
 
 %%====================================================================
 %% gen_server callbacks
@@ -54,12 +56,22 @@ start_link(Name, Args) ->
 %%                         {stop, Reason}
 %% Description: Initiates the server
 %%--------------------------------------------------------------------
-init([Table, ListCols, {View, Edit}]) ->
+init([EvoName, TableName, [Table, ListCols, {List, View, Edit}]]) ->
+    
+    Templates = [{list, List}, {view, View}, {edit, Edit}],
+    Callback = fun(Name) -> 
+                       case proplists:get_value(Name, Templates, not_found) of
+                           auto -> auto_template(Name);
+                           Other -> Other
+                       end
+               end,
+
     gen_server:cast(self(), reload_columns),
-    {ok, #state{table=Table,
+    {ok, #state{evoname=EvoName,
+                name=TableName,
+                table=Table,
                 listCols=ListCols,
-                viewTemplate=View,
-                editTemplate=Edit}}.
+                templateCallback=Callback}}.
 
 %%--------------------------------------------------------------------
 %% Function: %% handle_call(Request, From, State) -> {reply, Reply, State} |
@@ -76,7 +88,6 @@ handle_call({respond, Req, 'GET', []}, _From, State) ->
     {reply, {response, Response}, State};
 
 handle_call({respond, Req, 'GET', [PageStr]}, _From, State) ->
-   
     Table = State#state.table,
     Columns = State#state.columns,
     ColNames = lists:map(fun({K,_V}) -> K end, Columns),
@@ -86,29 +97,19 @@ handle_call({respond, Req, 'GET', [PageStr]}, _From, State) ->
     Page = list_to_integer(PageStr),
     OffsetIndex = Page - 1,
 
-    Rows = gen_server:call(?MAGICDB, {getRows, Table, [], {PageSize, PageSize*OffsetIndex}}),
+    Rows = ?DB({getRows, Table, [], {PageSize, PageSize*OffsetIndex}}),
 
     Data = [{columns, ColNames}, {rows, Rows}, 
-            {table, Table},
+            {table, Table}, {page, Page},
             {db_value, fun format_db_value/1},
-            {page, Page},
             {pageLink, fun page_link/3}],
 
-    {Template, NewState} = get_template(State, list),
+    Reply = case ?Template(run_raw, {reload, list}, Data) of
+                {ok, Result} -> {wrap, site, [{content, Result}]};
+                {error, Error} -> {response, Req:ok({"text/plain", Error})}
+            end,
 
-    Template ! {run, Data, true, self()},
-
-    Reply = receive
-        {Template, result, Result} ->
-                     Req:ok({"text/html", Result})
-    after 3000 ->
-            cr:dbg({died_waiting_for_template, list}),
-            exit(Template, too_slow),
-            Req:ok({"text/plain", "Template died"})
-    end,
-
-    {reply, {response, Reply}, NewState};
-   
+    {reply, Reply, State};
 
 handle_call(_Request, _From, State) ->
     Reply = ok,
@@ -123,7 +124,7 @@ handle_call(_Request, _From, State) ->
 handle_cast(reload_columns, State) ->
     Table = State#state.table,
     cr:dbg({reloading_columns, Table}),
-    Columns = gen_server:call(?MAGICDB, {getColumns, Table}),
+    Columns = ?DB({getColumns, Table}),
     {noreply, State#state{columns=Columns}};
 
 handle_cast(_Msg, State) ->
@@ -159,19 +160,6 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%--------------------------------------------------------------------
 
-get_template(State, Name) ->
-    case proplists:get_value(Name, State#state.templates) of
-        undefined ->
-            cr:dbg({generating, Name}),
-            Content = template(State, Name),
-            Template = spawn_link(fun() -> evo:prepare(Content) end),
-            cr:dbg({template, Template}),
-            NewTemplates = [{Name,Template}|State#state.templates],
-            {Template, State#state{templates=NewTemplates}};
-        Template -> 
-            {Template, State}
-    end.
-
 format_db_value({_Col, null}) ->
     {tags, [{"<div class=\"null\">", "null", "</div>"}]};
 format_db_value({_Col, Val}) when is_integer(Val) ->
@@ -201,32 +189,7 @@ page_link(Data, Offset, Label) ->
     end.
 
 
-template(_State, list) ->
-    auto_template(tableContent);
-
-template(State, detailView) ->
-    case State#state.viewTemplate of
-        auto -> auto_template(tableContent);
-        _ -> State#state.viewTemplate
-    end;
-
-template(State, detailEdit) ->
-    case State#state.editTemplate of
-        auto -> auto_template(tableContent);
-        _ -> State#state.editTemplate
-    end.
-
-
-auto_template(tableList) -> atom_to_list('
-<ul class="tableList" e:render="foreach" e:key="tables">
-  <li>
-    <e:attr name="class" e:render="data" e:dataExp="OddEven" />
-    <a><e:attr name="href" e:render="data">/tables/</e:attr><e:slot e:format="pretty" /></a>
-  </li>
-</ul>
-');
-
-auto_template(tableContent) -> "
+auto_template(list) -> "
 <div>
 <div class=\"pageLinks\">
   <e:slot e:format=\"pageLink -1 Prev\" />
@@ -248,4 +211,7 @@ auto_template(tableContent) -> "
 </table>
 </div>
 </div>
-".
+";
+
+auto_template(view) -> "Not yet";
+auto_template(edit) -> auto_template(view).

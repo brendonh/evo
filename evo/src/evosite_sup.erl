@@ -27,7 +27,7 @@
 %% Description: Starts the supervisor
 %%--------------------------------------------------------------------
 start_link({SiteName, _Conf}=SiteSpec) ->
-    SupName = concat_atoms(["evosite_", SiteName, "_sup"]),
+    SupName = evoutil:concat_atoms(["evosite_", SiteName, "_sup"]),
     supervisor:start_link({local, SupName}, ?MODULE, [SiteSpec]).
 
 %%====================================================================
@@ -44,7 +44,7 @@ start_link({SiteName, _Conf}=SiteSpec) ->
 %%--------------------------------------------------------------------
 init([{SiteName, SiteConf}]) ->
 
-    EvoName = concat_atoms(["evosite_", SiteName]),
+    EvoName = evoutil:concat_atoms(["evosite_", SiteName]),
 
     Bits = lists:concat(
              lists:map(
@@ -58,7 +58,7 @@ init([{SiteName, SiteConf}]) ->
 %%====================================================================
 
 start(mochiweb, EvoName, SiteConf) ->
-    MochiName = concat_atoms([EvoName, "_mochiweb"]),
+    MochiName = evoutil:concat_atoms([EvoName, "_mochiweb"]),
     [{MochiName, {mochiweb_http, start,
                   [[{name, MochiName},
                     {port, proplists:get_value(port, SiteConf, ?DEFAULT_PORT)}, 
@@ -69,7 +69,7 @@ start(magicdb, EvoName, SiteConf) ->
     case proplists:get_value(dbinfo, SiteConf) of
         {DB, User, Pass} ->
             DSN = lists:flatten(io_lib:format("DSN=~s;UID=~s;PWD=~s", [DB, User, Pass])),
-            MagicName = concat_atoms([EvoName, "_magicdb"]),
+            MagicName = evoutil:concat_atoms([EvoName, "_magicdb"]),
             [{MagicName, {magicdb, start_link, [{dsn, DSN}, {local, MagicName}]},
               permanent,2000,worker,[magicdb]}];
         undefined ->
@@ -84,34 +84,25 @@ start(evosite, EvoName, SiteConf) ->
       permanent,2000,worker,[evosite]}];
 
 start(evotemplate, EvoName, _SiteConf) ->
-    TemplateServerName = concat_atoms([EvoName, "_evotemplate"]),
-    Callback = fun(T) -> gen_server:call(EvoName, {template, T}) end,
+    TemplateServerName = evoutil:concat_atoms([EvoName, "_evotemplate"]),
+    %Callback = fun(T) -> gen_server:call(EvoName, {template, T}) end,
+    %Callback = fun(
     [{TemplateServerName, 
-      {evotemplate, start_link, [TemplateServerName, Callback]},
+      {evotemplate, start_link, [TemplateServerName]},
       permanent,5000,worker,[evotemplate]}];
 
 start(components, EvoName, SiteConf) ->
     lists:concat(
       lists:map(
-        fun({Path, Type, Args}) -> init_component(EvoName, Type, Args) end,
+        fun({_Path, Type, Args}) -> init_component(EvoName, Type, Args) end,
         proplists:get_value(components, SiteConf, []))).
 
 init_component(EvoName, gen_server, {Mod, Name, InitArgs}) ->
-    CompName = concat_atoms([EvoName, "_component_", Name]),
-    [{CompName, {Mod, start_link, [CompName, InitArgs]},
+    CompName = evoutil:concat_atoms([EvoName, "_component_", Name]),
+    [{CompName, {Mod, start_link, [EvoName, Name, InitArgs]},
       permanent,2000,worker,[Mod]}];
 init_component(_EvoName, gen_server, _Name) -> [];
 init_component(_EvoName, module, {_Mod, _InitArgs}) ->  [].
 
 make_loop(EvoName) ->
     fun(Req) -> gen_server:call(EvoName, {respond, Req}) end.
-             
-concat_atoms(Bits) ->
-    concat_atoms(Bits, []).
-
-concat_atoms([], Acc) -> 
-    list_to_atom(lists:flatten(lists:reverse(Acc)));
-concat_atoms([Atom|Rest], Acc) when is_atom(Atom) ->
-    concat_atoms(Rest, [atom_to_list(Atom)|Acc]);
-concat_atoms([String|Rest], Acc) ->
-    concat_atoms(Rest, [String|Acc]).
