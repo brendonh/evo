@@ -99,7 +99,18 @@ handle_call({respond, Req, 'GET', [PageStr]}, _From, State) ->
 
     Rows = ?DB({getRows, Table, [], {PageSize, PageSize*OffsetIndex}}),
 
-    Data = [{columns, ColNames}, {rows, Rows}, 
+    case State#state.listCols of
+        all -> 
+            ListCols = ColNames,
+            ListRows = Rows;        
+        List -> 
+            ListCols = List,
+            ListRows = [get_list_cols(Row, ListCols) || Row <- Rows]
+    end,
+
+    Data = [{all_columns, ColNames}, 
+            {columns, ListCols},
+            {rows, ListRows}, 
             {table, Table}, {page, Page},
             {db_value, fun format_db_value/1},
             {pageLink, fun page_link/3}],
@@ -160,6 +171,9 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%--------------------------------------------------------------------
 
+get_list_cols(Row, Cols) ->
+    [{Col, proplists:get_value(Col, Row)} || Col <- Cols].
+
 format_db_value({_Col, null}) ->
     {tags, [{"<div class=\"null\">", "null", "</div>"}]};
 format_db_value({_Col, Val}) when is_integer(Val) ->
@@ -189,29 +203,6 @@ page_link(Data, Offset, Label) ->
     end.
 
 
-auto_template(list) -> "
-<div>
-<div class=\"pageLinks\">
-  <e:slot e:format=\"pageLink -1 Prev\" />
-  <e:slot e:format=\"pageLink +1 Next\" />
-</div>
-<div class=\"tableScroll\">
-<table class=\"dbTable\">
-  <tr e:key=\"columns\">
-    <th class=\"first\" e:render=\"data\" e:dataExp=\"lists:nth(1,D)\" />
-    <e:inv e:render=\"foreach\" e:dataExp=\"lists:nthtail(1,D)\"><th e:render=\"data\" /></e:inv>
-  </tr>
-  <tbody e:render=\"foreach\" e:key=\"rows\">
-    <tr>
-      <e:attr name=\"class\" e:render=\"data\" e:dataExp=\"OddEven\" />
-      <td class=\"first\" e:render=\"data\" e:format=\"db_value\" e:dataExp=\"lists:nth(1,D)\" />
-      <e:inv e:render=\"foreach\" e:dataExp=\"lists:nthtail(1,D)\"><td e:render=\"data\" e:format=\"db_value\" /></e:inv>
-    </tr>
-  </tbody>
-</table>
-</div>
-</div>
-";
-
-auto_template(view) -> "Not yet";
+auto_template(list) -> {file, "templates/auto/table_list.html"};
+auto_template(view) -> "<div>Not yet</div>";
 auto_template(edit) -> auto_template(view).

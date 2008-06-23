@@ -80,8 +80,12 @@ handle_call({Command, TemplateName, Data, Callback}, _From, State) ->
         [{TemplateName, Template}] -> ok
     end,
     Result = case Template of
-        not_found -> {error, {TemplateName, not_found}};
-        _ ->  run_template(Command, TemplateName, Template, Data, Cache)
+                 not_found -> 
+                     {error, {TemplateName, not_found}};
+                 {file_error, Filename, Error} -> 
+                     {error, {TemplateName, file_error, Filename, Error}};
+                 _ ->  
+                     run_template(Command, TemplateName, Template, Data, Cache)
     end,
     {reply, Result, State};
 
@@ -133,8 +137,13 @@ generate_template(Cache, TemplateName, Callback) ->
     case Callback(TemplateName) of
         not_found -> not_found;
         {file, Filename} ->
-            {ok, Content} = file:read_file(Filename),
-            init_template(Cache, TemplateName, binary_to_list(Content));
+            cr:dbg({reading, Filename}),
+            case file:read_file(Filename) of
+                {ok, Content} ->
+                    init_template(Cache, TemplateName, binary_to_list(Content));
+                {error, Error} ->
+                    {file_error, Filename, Error}
+            end;
         Content -> 
             init_template(Cache, TemplateName, Content)
     end.
