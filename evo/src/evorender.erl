@@ -2,7 +2,7 @@
 
 -include("evo.hrl").
 
--export([data/1, foreach/1, items/1, get_data/1, format/2]).
+-export([data/1, foreach/1, foreach_zip/1, items/1, get_data/1, format/2]).
 
 data(State) ->
     Data = get_data(State),
@@ -10,6 +10,15 @@ data(State) ->
                 render=none}.
 
 foreach(State) ->
+    Data = get_data(State),
+    foreach(State, Data).
+
+foreach_zip(State) ->
+    {Data,Add} = get_data(State),
+    Zipped = [{Datum, Add} || Datum <- Data],
+    foreach(State, Zipped).
+
+foreach(State, Data) ->
     {_, NewChildren} = lists:foldl(
                          fun(Data, {Row, Acc}) ->
                                  ID = evo:new_id(),
@@ -22,7 +31,7 @@ foreach(State) ->
                                  Final = set_parent(NewState, State),
                                  {Row+1, [Final|Acc]}
                          end,
-                         {0, []}, get_data(State)),
+                         {0, []}, Data),
     State#state{render=none, children=NewChildren}.
 
 items(State) ->
@@ -59,7 +68,8 @@ format(#state{formatFunc={Key, Args}}, Data) ->
     case Func of
         undefined -> "Missing format function: " ++ Key;
         _ ->
-            apply(Func, [Data|Args])
+            TopData = evo:get_cache(0),
+            apply(Func, [Data,TopData|Args])
     end.          
 
 get_row(#state{row=none, parent=none}) -> none;

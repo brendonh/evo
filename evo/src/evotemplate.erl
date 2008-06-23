@@ -137,7 +137,6 @@ generate_template(Cache, TemplateName, Callback) ->
     case Callback(TemplateName) of
         not_found -> not_found;
         {file, Filename} ->
-            cr:dbg({reading, Filename}),
             case file:read_file(Filename) of
                 {ok, Content} ->
                     init_template(Cache, TemplateName, binary_to_list(Content));

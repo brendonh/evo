@@ -46,6 +46,8 @@ init([{SiteName, SiteConf}]) ->
 
     EvoName = evoutil:concat_atoms(["evosite_", SiteName]),
 
+    ets:new(evoutil:concat_atoms([EvoName, "_componentPaths"]), [public, bag, named_table]),
+
     Bits = lists:concat(
              lists:map(
                fun (B) -> start(B, EvoName, SiteConf) end,
@@ -85,8 +87,6 @@ start(evosite, EvoName, SiteConf) ->
 
 start(evotemplate, EvoName, _SiteConf) ->
     TemplateServerName = evoutil:concat_atoms([EvoName, "_evotemplate"]),
-    %Callback = fun(T) -> gen_server:call(EvoName, {template, T}) end,
-    %Callback = fun(
     [{TemplateServerName, 
       {evotemplate, start_link, [TemplateServerName]},
       permanent,5000,worker,[evotemplate]}];
@@ -94,15 +94,20 @@ start(evotemplate, EvoName, _SiteConf) ->
 start(components, EvoName, SiteConf) ->
     lists:concat(
       lists:map(
-        fun({_Path, Type, Args}) -> init_component(EvoName, Type, Args) end,
+        fun({Path, Type, Args}) -> init_component(Path, EvoName, Type, Args) end,
         proplists:get_value(components, SiteConf, []))).
 
-init_component(EvoName, gen_server, {Mod, Name, InitArgs}) ->
+init_component(Path, EvoName, gen_server, {Mod, Name, InitArgs}) ->
     CompName = evoutil:concat_atoms([EvoName, "_component_", Name]),
+    CompPathTable = evoutil:concat_atoms([EvoName, "_componentPaths"]),
+    ets:insert(CompPathTable, {CompName, Path}),
     [{CompName, {Mod, start_link, [EvoName, Name, InitArgs]},
       permanent,2000,worker,[Mod]}];
-init_component(_EvoName, gen_server, _Name) -> [];
-init_component(_EvoName, module, {_Mod, _InitArgs}) ->  [].
+init_component(Path, EvoName, gen_server, Name) -> 
+    CompPathTable = evoutil:concat_atoms([EvoName, "_componentPaths"]),
+    ets:insert(CompPathTable, {Name, Path}),
+    [];
+init_component(_Path, _EvoName, module, {_Mod, _InitArgs}) ->  [].
 
 make_loop(EvoName) ->
     fun(Req) -> gen_server:call(EvoName, {respond, Req}) end.

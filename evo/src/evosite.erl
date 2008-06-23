@@ -10,7 +10,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/2, db/2, template/2]).
+-export([start_link/2, db/2, template/2, link/3]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -41,6 +41,16 @@ db(EvoName, Args) ->
 template(EvoName, Args) ->
     TemplateServerName = evoutil:concat_atoms([EvoName, "_evotemplate"]),
     gen_server:call(TemplateServerName, Args).
+
+link(EvoName, ComponentName, SubBits) ->
+    ComponentPathTable = evoutil:concat_atoms([EvoName, "_componentPaths"]),
+    FullComponentName = evoutil:concat_atoms([EvoName, "_component_", ComponentName]),
+    case ets:lookup(ComponentPathTable, FullComponentName) of
+        [] -> not_found;
+        [{FullComponentName, Path}|_] -> 
+            [$/|string:join([Path|SubBits], "/")]
+    end.
+            
 
 %%====================================================================
 %% gen_server callbacks
@@ -163,6 +173,8 @@ run_responders(State, Req, Callback, Args) ->
             run_responders(State, Req, NewComponent, NewArgs);
         {'EXIT', Error} ->
             display_error(Req, "Error: ~p~n", [Error]);
+        not_found ->
+            Req:not_found();
         Other ->
             display_error(Req, "Unknown component response: ~p~n", [Other])
     end.

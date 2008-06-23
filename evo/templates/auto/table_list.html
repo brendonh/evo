@@ -12,8 +12,10 @@
   <tbody e:render="foreach" e:key="rows">
     <tr>
       <e:attr name="class" e:render="data" e:dataExp="OddEven" />
-      <td class="first" e:render="data" e:format="db_value" e:dataExp="lists:nth(1,D)" />
-      <e:inv e:render="foreach" e:dataExp="lists:nthtail(1,D)"><td e:render="data" e:format="db_value" /></e:inv>
+      <td class="first" e:render="data" e:format="db_value" e:dataExp="{lists:nth(1,D),D}" />
+      <e:inv e:render="foreach_zip" e:dataExp="{lists:nthtail(1,D),D}">
+        <td e:render="data" e:format="db_value" />
+      </e:inv>
     </tr>
   </tbody>
 </table>

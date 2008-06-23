@@ -127,10 +127,7 @@ watch_parsing(State) ->
                               io_lib:format("proplists:get_value(~s, ~s)", [E, A]) 
                       end, ["D"], 
                       string:tokens(CompoundKey, "."))),
-            %Keys = 
-            %Exp = lists:flatten(io_lib:format("proplists:get_value(~s, D)", [Key])),
-            watch_parsing(
-              State#state{dataExpression=Exp});
+            watch_parsing(State#state{dataExpression=Exp});
 
         {attr, {{e, render}, Value}} ->
             watch_parsing(State#state{render=Value});
@@ -311,6 +308,9 @@ partial_flatten({Tag, Content, End}) ->
         _ ->
             {FlatTag, Inside, FlatEnd}
     end;
+
+partial_flatten({tags, Tags}) ->
+    partial_flatten(Tags);
 
 partial_flatten([C|_]=Text) when is_integer(C) ->
     newlines_to_spaces(Text);
