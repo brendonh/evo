@@ -84,11 +84,13 @@ init([EvoName, TableName, [Table, ListCols, {List, View, Edit}]]) ->
 %%--------------------------------------------------------------------
 
 handle_call({respond, Req, 'GET', []}, _From, State) ->
-    Response = Req:respond({302, [{<<"Location">>, "/customers/list/1"}], <<"">>}),
+    Link = evosite:link(State#state.evoname, State#state.compname, ["list", "1"]),
+    Response = Req:respond({302, [{<<"Location">>, Link}], <<"">>}),
     {reply, {response, Response}, State};
 
 handle_call({respond, Req, 'GET', ["list"]}, _From, State) ->
-    Response = Req:respond({302, [{<<"Location">>, "/customers/list/1"}], <<"">>}),
+    Link = evosite:link(State#state.evoname, State#state.compname, ["list", "1"]),
+    Response = Req:respond({302, [{<<"Location">>, Link}], <<"">>}),
     {reply, {response, Response}, State};
 
 handle_call({respond, Req, 'GET', ["list", PageStr]}, _From, State) ->
@@ -215,23 +217,18 @@ link_view(Val) ->
 
     Link = evosite:link(EvoName, CompName, ["view", integer_to_list(ID)]),
 
-    % This is so gonna get frameworkified
-    OpenTag = lists:flatten(io_lib:format("<a href=\"~s\">", [Link])),
-    {tags, [{OpenTag,
-             format_db_value(Val),
-             "</a>"}]}.
-
+    evo:tag(a, [{href, Link}], format_db_value(Val)).
 
 format_db_value(null) ->
-    {tags, [{"<div class=\"null\">", "null", "</div>"}]};
+    evo:tag('div', [{class, "null"}], "null");
 
 format_db_value(Val) when is_integer(Val) ->
-    {tags, [{"<div class=\"number\">", integer_to_list(Val), "</div>"}]};
+    evo:tag('div', [{class, "number"}], integer_to_list(Val));
 
 format_db_value(Val) when is_float(Val) ->
-    {tags, [{lists:flatten(io_lib:format("<div class=\"number\" title=\"~p\">", [Val])), 
-             lists:flatten(io_lib:format("~.2f", [Val])), 
-             "</div>"}]};
+    Long = lists:flatten(io_lib:format("~p", [Val])),
+    Short = lists:flatten(io_lib:format("~.2f", [Val])),
+    evo:tag('div', [{class, "number"}, {title, Long}], Short);
 
 format_db_value([C|_]=Val) when is_integer(C) ->
     Val;
@@ -251,9 +248,7 @@ page_link(Data, Offset, Label) ->
         I when I < 1 ->
             Label;
         _ ->
-            {tags, [{lists:flatten(io_lib:format("<a href=\"~s\">", [Link])),
-                     Label,
-                     "</a>"}]}
+            evo:tag(a, [{href, Link}], Label)
     end.
 
 

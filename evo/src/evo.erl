@@ -3,7 +3,7 @@
 -import (utf8, [from_binary/1, to_binary/1]).
 -export([prepare/1, run/2, run/3, run_file/2, run_file/3, new_id/0, 
          get_cache/1, put_cache/2,
-         var/1, put_var/2, put_var_cache/3, conf/1]).
+         var/1, put_var/2, put_var_cache/3, conf/1, tag/3]).
 
 -include("evo.hrl").
 
@@ -289,7 +289,8 @@ flatten_attrs(Attrs) ->
       " ").
 
 flatten_name({none, Attr}) -> atom_to_list(Attr);
-flatten_name({NS, Attr}) -> lists:flatten([atom_to_list(NS), ":", atom_to_list(Attr)]).
+flatten_name({NS, Attr}) -> lists:flatten([atom_to_list(NS), ":", atom_to_list(Attr)]);
+flatten_name(Attr) -> flatten_name({none, Attr}).
 
 
 indenticate(TagSoup) ->
@@ -434,3 +435,12 @@ put_var_cache(ID, Name, Value) ->
 
 conf(Name) ->
     proplists:get_value(Name, get(evoconf)).
+
+
+tag({NS, Name}, Attrs, Content) ->
+    {tags, [{lists:flatten([$<, flatten_name({NS, Name}), flatten_attrs(Attrs), $>]),
+             Content,
+             lists:flatten([$<, $/, flatten_name({NS, Name}), $>])}]};
+
+tag(Name, Attrs, Content) ->
+    tag({none, Name}, Attrs, Content).
