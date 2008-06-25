@@ -69,11 +69,11 @@ init([]) ->
 %% Description: Handling call messages
 %%--------------------------------------------------------------------
 
-handle_call({Command, {reload, TemplateName}, Data, Callback}, _From, State) ->
+handle_call({Command, {reload, TemplateName}, Data, Conf, Callback}, _From, State) ->
     ets:delete(State#state.cacheName, TemplateName),
-    handle_call({Command, TemplateName, Data, Callback}, _From, State);
+    handle_call({Command, TemplateName, Data, Conf, Callback}, _From, State);
 
-handle_call({Command, TemplateName, Data, Callback}, _From, State) ->
+handle_call({Command, TemplateName, Data, Conf, Callback}, _From, State) ->
     Cache = State#state.cacheName,
     case ets:lookup(Cache, TemplateName) of
         [] -> Template = generate_template(Cache, TemplateName, Callback);
@@ -85,7 +85,7 @@ handle_call({Command, TemplateName, Data, Callback}, _From, State) ->
                  {file_error, Filename, Error} -> 
                      {error, {TemplateName, file_error, Filename, Error}};
                  _ ->  
-                     run_template(Command, TemplateName, Template, Data, Cache)
+                     run_template(Command, TemplateName, Template, Data, Conf, Cache)
     end,
     {reply, Result, State};
 
@@ -153,15 +153,9 @@ init_template(Cache, Name, Content) ->
     ets:insert(Cache, {Name, Template}),
     Template.
 
-run_template(run, Name, Template, Data, Cache) ->
-    Template ! {run, Data, true, self()},
-    get_result(Name, Template, Cache);
-run_template(run_raw, Name, Template, Data, Cache) ->
-    Template ! {run_raw, Data, self()},
-    get_result(Name, Template, Cache). 
 
-
-get_result(TemplateName, Template, Cache) ->
+run_template(Command, TemplateName, Template, Data, Conf, Cache) ->
+    Template ! {Command, Data, Conf, self()},
     receive
         {Template, result, R} ->
             {ok, R};

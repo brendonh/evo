@@ -2,23 +2,23 @@
 
 -include("evo.hrl").
 
--export([data/1, foreach/1, foreach_zip/1, items/1, get_data/1, format/2]).
+-export([data/1, foreach/1, foreach/2, items/1, get_data/1, format/2]).
 
 data(State) ->
     Data = get_data(State),
     State#state{children=[format(State, Data)|State#state.children],
                 render=none}.
 
+%foreach(State, RowName) ->
+%    Data = get_data(State),
+    %evo:put_var_cache(State#state.id, RowName, Data),
+%    do_foreach(State, Data).
+
 foreach(State) ->
-    Data = get_data(State),
-    foreach(State, Data).
+    foreach(State, "none").
 
-foreach_zip(State) ->
-    {Data,Add} = get_data(State),
-    Zipped = [{Datum, Add} || Datum <- Data],
-    foreach(State, Zipped).
-
-foreach(State, Data) ->
+foreach(State, NameStr) ->
+    Name = list_to_atom(NameStr),
     {_, NewChildren} = lists:foldl(
                          fun(Data, {Row, Acc}) ->
                                  ID = evo:new_id(),
@@ -29,9 +29,15 @@ foreach(State, Data) ->
                                                    level=State#state.level+1,
                                                    children=State#state.children},
                                  Final = set_parent(NewState, State),
+
+                                 case Name of
+                                     none -> ok;
+                                     Name -> evo:put_var_cache(Final#state.id, Name, Data)
+                                 end,
+
                                  {Row+1, [Final|Acc]}
                          end,
-                         {0, []}, Data),
+                         {0, []}, get_data(State)),
     State#state{render=none, children=NewChildren}.
 
 items(State) ->
@@ -63,14 +69,16 @@ get_data(#state{id=ID, dataExpression=DataExp, parent=Parent}=State) ->
     end.
 
 format(#state{formatFunc=none}, Data) -> Data;
-format(#state{formatFunc={Key, Args}}, Data) ->
-    Func = proplists:get_value(Key, evo:get_cache(0)),
+format(#state{formatFunc={Key, Args}}=State, Data) ->
+    Func = proplists:get_value(Key, get(evoconf)),
     case Func of
         undefined -> "Missing format function: " ++ Key;
         _ ->
-            TopData = evo:get_cache(0),
-            apply(Func, [Data,TopData|Args])
-    end.          
+            put(formatState, State),
+            Result = apply(Func, [Data|Args]),
+            put(formatState, undefined),
+            Result
+    end.
 
 get_row(#state{row=none, parent=none}) -> none;
 get_row(#state{row=none, parent=Parent}) -> get_row(Parent);
@@ -92,9 +100,8 @@ eval(String, OldData, Row) ->
 
 set_parent(Text, _) when is_list(Text) -> Text;
 set_parent(State, Parent) ->
+    ID = evo:new_id(),
     NewChildren = lists:map(fun(C) -> set_parent(C, State) end,
                             State#state.children),       
-    ID = evo:new_id(),
     evo:put_cache(ID, evo:get_cache(State#state.id)),
     State#state{id=ID, parent=Parent, children=NewChildren}.
-

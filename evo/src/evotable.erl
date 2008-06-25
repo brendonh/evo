@@ -17,7 +17,7 @@
          terminate/2, code_change/3]).
 
 -define(DB(Args), evosite:db(State#state.evoname, Args)).
--define(Template(C, T, D), evosite:template(State#state.evoname, {C,T,D, State#state.templateCallback})).
+-define(Template(C, T, D, Cf), evosite:template(State#state.evoname, {C,T,D,Cf,State#state.templateCallback})).
 
 -record(state, {
 
@@ -114,14 +114,16 @@ handle_call({respond, Req, 'GET', ["list", PageStr]}, _From, State) ->
 
     Data = [{all_columns, ColNames}, 
             {columns, [get_col_name(Col) || Col <- ListCols]},
-            {rows, ListRows}, 
-            {table, Table}, {page, Page},
-            {db_value, fun format_db_value/2},
-            {pageLink, fun page_link/4},
+            {rows, ListRows}],
+
+    Conf = [{table, Table}, {page, Page},
+            {db_value, fun format_value/1},
+            {pageLink, fun page_link/3},
+            {listCols, column_conf(State#state.listCols)},
             {evoname, State#state.evoname},
             {compname, State#state.compname}],
 
-    Reply = case ?Template(run_raw, {reload, list}, Data) of
+    Reply = case ?Template(run_raw, {reload, list}, Data, Conf) of
                 {ok, Result} -> {wrap, site, [{content, Result}, {title, State#state.table}]};
                 {error, Error} -> {response, Req:ok({"text/plain", Error})}
             end,
@@ -177,58 +179,72 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%--------------------------------------------------------------------
 
+column_conf(ListCols) ->
+    column_conf(ListCols, []).
+
+column_conf([], Conf) -> 
+    Conf;
+column_conf([{Name, Func}|Rest], Conf) ->
+    column_conf(Rest, [{Name, Func}|Conf]);
+column_conf([Name|Rest], Conf) ->
+    column_conf(Rest, [{Name, none}|Conf]).
+
 get_list_cols(Row, Cols) ->
-    [{Col, proplists:get_value(get_col_name(Col), Row)} || Col <- Cols].
+    [{get_col_name(Col), proplists:get_value(get_col_name(Col), Row)} || Col <- Cols].
 
 get_col_name({Col, _Func}) -> Col;
 get_col_name(Col) -> Col.
 
 
-format_db_value({{{_Col, {Mod, Func}}, Val}, _Row}, _TD) ->
-    apply(Mod, Func, [Val]);
+format_value({Col, Val}) ->
+    Func = proplists:get_value(Col, evo:conf(listCols)),
+    case Func of
+        none -> format_db_value(Val);
+        view -> link_view(Val);
+        Other -> format_db_value({unknown_func, Other})
+    end.
 
-format_db_value({{{Col, view}, Val}, Row}, TD) ->
-    EvoName = proplists:get_value(evoname, TD),
-    CompName = proplists:get_value(compname, TD),
+link_view(Val) ->
+    Row = evo:var(row),
+
     % Spot the bug!
     ID = proplists:get_value(id, Row),
+
+    EvoName = evo:conf(evoname),
+    CompName = evo:conf(compname),
+
     Link = evosite:link(EvoName, CompName, ["view", integer_to_list(ID)]),
 
     % This is so gonna get frameworkified
     OpenTag = lists:flatten(io_lib:format("<a href=\"~s\">", [Link])),
-
     {tags, [{OpenTag,
-             format_db_value({{Col, Val}, Row}, TD),
-             "</a>"}]};
+             format_db_value(Val),
+             "</a>"}]}.
 
-format_db_value({{{Col, What}, Val}, _Row}, _TD) ->
-    lists:flatten(io_lib:format("Unknown flattener: ~p~n", [What]));
 
-format_db_value({{_Col, null}, _Row}, _TD) ->
+format_db_value(null) ->
     {tags, [{"<div class=\"null\">", "null", "</div>"}]};
 
-format_db_value({{_Col, Val}, _Row}, _TD) when is_integer(Val) ->
+format_db_value(Val) when is_integer(Val) ->
     {tags, [{"<div class=\"number\">", integer_to_list(Val), "</div>"}]};
-format_db_value({{_Col, Val}, _Row}, _TD) when is_float(Val) ->
+
+format_db_value(Val) when is_float(Val) ->
     {tags, [{lists:flatten(io_lib:format("<div class=\"number\" title=\"~p\">", [Val])), 
              lists:flatten(io_lib:format("~.2f", [Val])), 
              "</div>"}]};
 
-format_db_value({{_Col, [C|_]=Val}, _Row}, _TD) when is_integer(C) ->
+format_db_value([C|_]=Val) when is_integer(C) ->
     Val;
-format_db_value({{_Col, []}, _Row}, _TD) ->
+format_db_value([]) ->
     "";
-format_db_value({{_Col, Val}, _Row}, _TD) ->
-    lists:flatten(io_lib:format("~p", [Val]));
-
-format_db_value({Other, _Row}, _TD) ->
-    io_lib:flatten(io_lib:format("Can't format: ~p~n", [Other])).
+format_db_value(Val) ->
+    lists:flatten(io_lib:format("~p", [Val])).
 
 
-page_link(Data, TD, Offset, Label) ->
-    EvoName = proplists:get_value(evoname, TD),
-    CompName = proplists:get_value(compname, TD),
-    Page = proplists:get_value(page, Data) + list_to_integer(Offset),
+page_link(Data, Offset, Label) ->
+    EvoName = evo:conf(evoname),
+    CompName = evo:conf(compname),
+    Page = evo:conf(page) + list_to_integer(Offset),
     Link = evosite:link(EvoName, CompName, ["list", integer_to_list(Page)]),
 
     case Page of

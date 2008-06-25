@@ -1,7 +1,9 @@
 -module(evo).
 
 -import (utf8, [from_binary/1, to_binary/1]).
--export([prepare/1, run/2, run/3, run_file/2, run_file/3, new_id/0, get_cache/1, put_cache/2]).
+-export([prepare/1, run/2, run/3, run_file/2, run_file/3, new_id/0, 
+         get_cache/1, put_cache/2,
+         var/1, put_var/2, put_var_cache/3, conf/1]).
 
 -include("evo.hrl").
 
@@ -19,12 +21,12 @@ run_file(Filename, InitialData, Pretty) ->
     end.
 
 run(Content, InitialData) ->   
-    run(Content, InitialData, true).
+    run(Content, InitialData, []).
 
-run(Content, InitialData, Pretty) ->   
+run(Content, InitialData, Conf) ->   
     Self = self(),
     Template = spawn_link(fun() -> prepare(Content) end),
-    Template ! {run, InitialData, Pretty, Self},
+    Template ! {run, InitialData, Conf, Self},
     get_result(Template).
 
 
@@ -56,6 +58,7 @@ after_death(Result) ->
 prepare(Content) ->
     put(dataCache, ets:new(dataCache, [private, set])),
     put(finalCache, ets:new(finalCache, [private, set])),
+    put(varCache, ets:new(varCache, [private, set])),
     put(newID, 1),
     Self = self(),
     spawn_link(fun() -> evoxml:parse(Content, Self) end),
@@ -67,12 +70,13 @@ prepare(Content) ->
 accept_runs(State) ->
     receive
         
-        {run_raw, InitialData, From} ->
-            From ! {self(), result, {tags, get_tags(State, InitialData)}},
+        {run_raw, InitialData, Conf, From} ->
+            From ! {self(), result, {tags, get_tags(State, InitialData, Conf)}},
             accept_runs(State);
 
-        {run, InitialData, Pretty, From} ->
-            TopTags = get_tags(State, InitialData),
+        {run, InitialData, Conf, From} ->
+            TopTags = get_tags(State, InitialData, Conf),
+            Pretty = proplists:get_value(pretty, Conf, true),
             I = case Pretty of
                     true -> fun indenticate/1;
                     false -> fun noindenticate/1
@@ -92,10 +96,12 @@ accept_runs(State) ->
     end.
 
 
-get_tags(State, InitialData) ->
+get_tags(State, InitialData, Conf) ->
     ets:delete_all_objects(get(dataCache)),
+    ets:delete_all_objects(get(varCache)),
     ets:insert(get(dataCache), ets:tab2list(get(finalCache))),
     put_cache(0, InitialData),
+    put(evoconf, Conf),
     emitChildren(State).
 
 
@@ -255,9 +261,9 @@ renderTag(State) ->
 applyRender(#state{render=none}=State) ->
     State;
 applyRender(State) ->
-    Render = list_to_atom(State#state.render),
-    NewState = evorender:Render(State),
-    NewState.
+    [FuncName|Args] = string:tokens(State#state.render, " "),
+    Render = list_to_atom(FuncName),
+    apply(evorender, Render, [State|Args]).
 
 emitFullTag(State, Children) ->
     {openTag(State),
@@ -394,3 +400,37 @@ get_cache(ID) ->
 put_cache(ID, Data) ->
     ets:insert(get(dataCache), {ID, Data}).
                        
+
+var(Name) ->
+    State = get(formatState),
+    get_state_var(State, Name).
+
+put_var(Name, Value) ->
+    State = get(formatState),
+    put_var_cache(State#state.id, Name, Value).
+
+get_state_var(none, _Name) ->
+    undefined;
+get_state_var(State, Name) ->
+    ID = State#state.id,
+    case get_var_cache(ID, Name) of
+        undefined -> get_state_var(State#state.parent, Name);
+        Value -> Value
+    end.
+
+get_var_cache(ID, Name) ->
+    case ets:lookup(get(varCache), ID) of
+        [{ID, Vars}] ->
+            proplists:get_value(Name, Vars);
+        [] -> undefined
+    end.
+
+put_var_cache(ID, Name, Value) ->
+    OldVars = case ets:lookup(get(varCache), ID) of
+        [{ID, Vars}] -> proplists:delete(Name, Vars);
+        [] -> []
+    end,
+    ets:insert(get(varCache), {ID, [{Name, Value}|OldVars]}).
+
+conf(Name) ->
+    proplists:get_value(Name, get(evoconf)).

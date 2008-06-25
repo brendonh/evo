@@ -6,14 +6,14 @@
 <div class="tableScroll">
 <table class="dbTable">
   <tr e:key="columns">
-    <th class="first" e:render="data" e:dataExp="lists:nth(1,D)" />
-    <e:inv e:render="foreach" e:dataExp="lists:nthtail(1,D)"><th e:render="data" /></e:inv>
+    <th class="first" e:render="data" e:dataExp="hd(D)" />
+    <e:inv e:render="foreach" e:dataExp="tl(D)"><th e:render="data" /></e:inv>
   </tr>
-  <tbody e:render="foreach" e:key="rows">
+  <tbody e:render="foreach row" e:key="rows">
     <tr>
       <e:attr name="class" e:render="data" e:dataExp="OddEven" />
-      <td class="first" e:render="data" e:format="db_value" e:dataExp="{lists:nth(1,D),D}" />
-      <e:inv e:render="foreach_zip" e:dataExp="{lists:nthtail(1,D),D}">
+      <td class="first" e:render="data" e:format="db_value" e:dataExp="hd(D)" />
+      <e:inv e:render="foreach" e:dataExp="tl(D)">
         <td e:render="data" e:format="db_value" />
       </e:inv>
     </tr>

@@ -3,10 +3,10 @@
 -export([test/0]).
 
 test_case(Name, Input, Data, Output) ->
-    test_case(Name, Input, Data, Output, true).
+    test_case(Name, Input, Data, Output, [{pretty, true}]).
 
-test_case(Name, Input, Data, Output, Pretty) ->
-    Result = evo:run(atom_to_list(Input), Data, Pretty),
+test_case(Name, Input, Data, Output, Conf) ->
+    Result = evo:run(atom_to_list(Input), Data, Conf),
     report_success(Name, Result, Output).
         
 
@@ -22,7 +22,7 @@ report_success(Name, Result, Output) ->
 
 test() ->
     T = fun test_case/4,
-    F = fun(N,I,D,O) -> test_case(N,I,D,O,false) end,
+    F = fun(N,I,D,O) -> test_case(N,I,D,O,[{pretty, false}]) end,
 
     StartTime = now(),
 
@@ -139,7 +139,7 @@ test() ->
 
 run_template(Template, Data, Name, Output) ->
     Self = self(),
-    Template ! {run, Data, false, Self},
+    Template ! {run, Data, [{pretty, false}], Self},
 
     receive
         {Template, result, R} ->

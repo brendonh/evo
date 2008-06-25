@@ -194,7 +194,7 @@ wrap_template(State, Req, TemplateName, Data) ->
 
 run_wrap_template(State, Req, Type, TemplateName, Data) ->
     case template(State#state.evoname, 
-                  {run, TemplateName, Data, 
+                  {run, TemplateName, Data, [],
                    State#state.templateCallback}) of
         {ok, Final} -> Req:ok({Type, Final});
         {error, Error} -> display_error(Req, "Template error: ~p~n", [Error]);
