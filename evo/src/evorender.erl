@@ -2,17 +2,12 @@
 
 -include("evo.hrl").
 
--export([data/1, foreach/1, foreach/2, items/1, get_data/1, format/2]).
+-export([data/1, foreach/1, foreach/2, items/1, ifdata/1, get_data/1, format/2]).
 
 data(State) ->
     Data = get_data(State),
     State#state{children=[format(State, Data)|State#state.children],
                 render=none}.
-
-%foreach(State, RowName) ->
-%    Data = get_data(State),
-    %evo:put_var_cache(State#state.id, RowName, Data),
-%    do_foreach(State, Data).
 
 foreach(State) ->
     foreach(State, "none").
@@ -45,6 +40,16 @@ items(State) ->
     NewData = lists:map(fun({K,V}) -> [{key, K}, {value, V}] end, Data),
     evo:put_cache(State#state.id, NewData),
     foreach(State).
+
+
+ifdata(State) ->
+    case get_data(State) of
+        true -> 
+            evo:put_cache(State#state.id, undefined),
+            State#state{dataExpression=none};
+        false -> 
+            State#state{children=[]}
+    end.
 
 get_data(#state{id=ID, dataExpression=none, parent=none}) ->
     evo:get_cache(ID);
@@ -90,12 +95,13 @@ eval(String, OldData, Row) ->
     {ok,Parsed} = erl_parse:parse_exprs(Scanned),
     B = erl_eval:add_binding('S', fun atom_to_list/1, erl_eval:new_bindings()), 
     B2 = erl_eval:add_binding('D', OldData, B),
-    B3 = erl_eval:add_binding('R', Row, B2),
-    B4 = case Row of
-             none -> erl_eval:add_binding('OddEven', none, B3);
-             _ -> erl_eval:add_binding('OddEven', lists:nth((Row rem 2) + 1, ['odd', 'even']), B3)
+    B3 = erl_eval:add_binding('Row', Row, B2),
+    B4 = erl_eval:add_binding('Key', fun(K) -> proplists:get_value(K, OldData) end, B3),
+    B5 = case Row of
+             none -> erl_eval:add_binding('OddEven', none, B4);
+             _ -> erl_eval:add_binding('OddEven', lists:nth((Row rem 2) + 1, ['odd', 'even']), B4)
          end,
-    {value, Result, _Env2} = erl_eval:exprs(Parsed,B4),
+    {value, Result, _Env2} = erl_eval:exprs(Parsed,B5),
     Result.
 
 set_parent(Text, _) when is_list(Text) -> Text;

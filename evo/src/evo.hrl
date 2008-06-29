@@ -10,3 +10,16 @@
   parent=none,
   children=[]
 }).
+
+
+-record(evofield,{
+   localName,
+   in_to_out,
+   out_to_in,
+   check_value,
+   render
+}).
+
+-record(evoform,{
+   fields
+}).

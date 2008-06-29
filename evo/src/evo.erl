@@ -198,10 +198,10 @@ emitTag(#state{tag={e,slot}}=State) ->
     emitTag(evorender:format(State, Final));
 
 emitTag(#state{tag={e,key}}=State) ->
-    emitTag(proplists:get_value(key, evorender:format(State, evorender:get_data(State))));
+    emitTag(evorender:format(State, proplists:get_value(key, evorender:get_data(State))));
 
 emitTag(#state{tag={e,value}}=State) ->
-    emitTag(proplists:get_value(value, evorender:format(State, evorender:get_data(State))));
+    emitTag(evorender:format(State, proplists:get_value(value, evorender:get_data(State))));
 
 emitTag(#state{tag={e,Tag}}) ->
     erlang:error({"Unknown evo tag", Tag});
@@ -284,8 +284,11 @@ closeTag(State) ->
 flatten_attrs([]) -> "";
 flatten_attrs(Attrs) ->
     " " ++ string:join(
-      lists:map(fun ({NSAttr, Value}) -> lists:flatten([flatten_name(NSAttr), $=, $", Value, $"]) end,
-                Attrs),
+      lists:map(
+        fun ({NSAttr, Value}) -> 
+                lists:flatten([flatten_name(NSAttr), $=, $", Value, $"])
+        end,
+        Attrs),
       " ").
 
 flatten_name({none, Attr}) -> atom_to_list(Attr);

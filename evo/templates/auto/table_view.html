@@ -1,0 +1,16 @@
+<div>
+
+  <e:inv e:render="ifdata" e:dataExp="Key(action) =:= view">
+    <a><e:attr name="href" e:render="data" e:key="id">../edit/</e:attr>Edit</a>
+  </e:inv>
+
+  <table class="dbTable">
+    <tbody e:render="foreach" e:key="row">
+      <tr>
+        <e:attr name="class" e:render="data" e:dataExp="OddEven" />
+        <td class="first" e:render="data" e:dataExp="{K,_}=D,K" />
+        <td e:render="data" e:format="db_value" />
+      </tr>
+    </tbody>
+  </table>
+</div>

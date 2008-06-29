@@ -29,6 +29,7 @@
 
  columns = [],
  templateCallback,
+ editForm,
 
  pageSize = 20
 
@@ -67,6 +68,7 @@ init([EvoName, TableName, [Table, ListCols, {List, View, Edit}]]) ->
                end,
 
     gen_server:cast(self(), reload_columns),
+
     {ok, #state{evoname=EvoName,
                 compname=TableName,
                 table=Table,
@@ -122,8 +124,7 @@ handle_call({respond, Req, 'GET', ["list", PageStr]}, _From, State) ->
             {db_value, fun format_value/1},
             {pageLink, fun page_link/3},
             {listCols, column_conf(State#state.listCols)},
-            {evoname, State#state.evoname},
-            {compname, State#state.compname}],
+            {state, State}],
 
     Reply = case ?Template(run_raw, {reload, list}, Data, Conf) of
                 {ok, Result} -> {wrap, site, [{content, Result}, {title, State#state.table}]};
@@ -132,8 +133,14 @@ handle_call({respond, Req, 'GET', ["list", PageStr]}, _From, State) ->
 
     {reply, Reply, State};
 
+
+handle_call({respond, Req, 'GET', ["view", RowID]}, _From, State) ->
+    {reply, row_page(State, Req, RowID, view), State};
+
+handle_call({respond, Req, 'GET', ["edit", RowID]}, _From, State) ->
+    {reply, row_page(State, Req, RowID, edit), State};
+
 handle_call(_Request, _From, State) ->
-    Reply = ok,
     {reply, not_found, State}.
 
 %%--------------------------------------------------------------------
@@ -146,7 +153,11 @@ handle_cast(reload_columns, State) ->
     Table = State#state.table,
     cr:dbg({reloading_columns, Table}),
     Columns = ?DB({getColumns, Table}),
-    {noreply, State#state{columns=Columns}};
+
+    Form = evoform:form_from_colspec(Columns),
+
+    {noreply, State#state{columns=Columns,
+                          editForm=Form}};
 
 handle_cast(_Msg, State) ->
     {noreply, State}.
@@ -181,6 +192,29 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%--------------------------------------------------------------------
 
+row_page(State, Req, RowID, Action) ->
+    Table = State#state.table,
+    Columns = State#state.columns,
+    ColNames = lists:map(fun({K,_V}) -> K end, Columns),
+
+    ID = list_to_integer(RowID),
+
+    Row = ?DB({rowByID, Table, ID}),
+
+    Data = [{columns, ColNames}, 
+            {row, Row}, {id, ID},
+            {action, Action}],
+
+    Conf = [{table, Table}, {row, Row},
+            {db_value, fun(X) -> cell_value(Action, X) end},
+            {state, State}],
+
+    case ?Template(run_raw, {reload, view}, Data, Conf) of
+        {ok, Result} -> {wrap, site, [{content, Result}, {title, State#state.table}]};
+        {error, Error} -> {response, Req:ok({"text/plain", Error})}
+    end.
+
+
 column_conf(ListCols) ->
     column_conf(ListCols, []).
 
@@ -212,12 +246,23 @@ link_view(Val) ->
     % Spot the bug!
     ID = proplists:get_value(id, Row),
 
-    EvoName = evo:conf(evoname),
-    CompName = evo:conf(compname),
+    State = evo:conf(state),
+    EvoName = State#state.evoname,
+    CompName = State#state.compname,
 
     Link = evosite:link(EvoName, CompName, ["view", integer_to_list(ID)]),
 
     evo:tag(a, [{href, Link}], format_db_value(Val)).
+
+
+cell_value(view, {_, Val}) -> format_db_value(Val);
+
+cell_value(edit, {Col, Val}) -> 
+    State = evo:conf(state),
+    Form = State#state.editForm,
+    Row = evo:conf(row),
+    evoform:render_field(Form, Col, Row).
+
 
 format_db_value(null) ->
     evo:tag('div', [{class, "null"}], "null");
@@ -238,9 +283,10 @@ format_db_value(Val) ->
     lists:flatten(io_lib:format("~p", [Val])).
 
 
-page_link(Data, Offset, Label) ->
-    EvoName = evo:conf(evoname),
-    CompName = evo:conf(compname),
+page_link(_Data, Offset, Label) ->
+    State = evo:conf(state),
+    EvoName = State#state.evoname,
+    CompName = State#state.compname,
     Page = evo:conf(page) + list_to_integer(Offset),
     Link = evosite:link(EvoName, CompName, ["list", integer_to_list(Page)]),
 
@@ -253,5 +299,5 @@ page_link(Data, Offset, Label) ->
 
 
 auto_template(list) -> {file, "templates/auto/table_list.html"};
-auto_template(view) -> "<div>Not yet</div>";
+auto_template(view) -> {file, "templates/auto/table_view.html"};
 auto_template(edit) -> auto_template(view).
