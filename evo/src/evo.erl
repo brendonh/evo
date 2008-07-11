@@ -445,5 +445,8 @@ tag({NS, Name}, Attrs, Content) ->
              Content,
              lists:flatten([$<, $/, flatten_name({NS, Name}), $>])}]};
 
-tag(Name, Attrs, Content) ->
-    tag({none, Name}, Attrs, Content).
+tag(Name, Attrs, "") -> empty_tag({none, Name}, Attrs);
+tag(Name, Attrs, Content) -> tag({none, Name}, Attrs, Content).
+
+empty_tag({NS, Name}, Attrs) ->
+    {tags, [lists:flatten([$<, flatten_name({NS, Name}), flatten_attrs(Attrs), " />"])]}.

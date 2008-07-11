@@ -4,6 +4,8 @@
     <a><e:attr name="href" e:render="data" e:key="id">../edit/</e:attr>Edit</a>
   </e:inv>
 
+  <form method="post" enctype="multipart/form-data">
+
   <table class="dbTable">
     <tbody e:render="foreach" e:key="row">
       <tr>
@@ -13,4 +15,11 @@
       </tr>
     </tbody>
   </table>
+
+  <e:inv e:render="ifdata" e:dataExp="Key(action) =/= view">
+    <input type="submit" value="Save" />
+  </e:inv>
+
+  </form>
+
 </div>

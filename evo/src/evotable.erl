@@ -128,7 +128,7 @@ handle_call({respond, Req, 'GET', ["list", PageStr]}, _From, State) ->
 
     Reply = case ?Template(run_raw, {reload, list}, Data, Conf) of
                 {ok, Result} -> {wrap, site, [{content, Result}, {title, State#state.table}]};
-                {error, Error} -> {response, Req:ok({"text/plain", Error})}
+                {error, Error} -> {error, Error}
             end,
 
     {reply, Reply, State};
@@ -139,6 +139,16 @@ handle_call({respond, Req, 'GET', ["view", RowID]}, _From, State) ->
 
 handle_call({respond, Req, 'GET', ["edit", RowID]}, _From, State) ->
     {reply, row_page(State, Req, RowID, edit), State};
+
+handle_call({respond, Req, 'POST', ["edit", RowID]}, _From, State) ->
+
+    OutValues = mochiweb_multipart:parse_form(Req),
+    cr:dbg({out_values, OutValues}),
+
+    evoform:parse_form(State#state.editForm, OutValues),
+
+    Link = evosite:link(State#state.evoname, State#state.compname, ["view", RowID]),
+    {reply, {response, Req:respond({302, [{<<"Location">>, Link}], <<"">>})}, State};
 
 handle_call(_Request, _From, State) ->
     {reply, not_found, State}.
@@ -211,7 +221,7 @@ row_page(State, Req, RowID, Action) ->
 
     case ?Template(run_raw, {reload, view}, Data, Conf) of
         {ok, Result} -> {wrap, site, [{content, Result}, {title, State#state.table}]};
-        {error, Error} -> {response, Req:ok({"text/plain", Error})}
+        {error, Error} -> {error, Error}
     end.
 
 

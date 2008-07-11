@@ -2,13 +2,12 @@
 
 -include("evo.hrl").
 
--export([form_from_colspec/1, render_field/3]).
+-export([form_from_colspec/1, render_field/3, parse_form/2]).
 
 
 
 form_from_colspec(ColSpec) ->
     Fields = [field_from_column(Col) || Col <- ColSpec],
-    %cr:dbg({fields, Fields}),
     #evoform{fields=Fields}.
 
 field_from_column({NameStr, Type}) ->
@@ -29,8 +28,9 @@ filters_for_column({sql_float, _}) ->
                    true -> list_to_float(S);
                    false -> float(list_to_integer(S))
                end end};
+filters_for_column(sql_real) -> filters_for_column({sql_float, 4});
 filters_for_column(Other) ->
-    %cr:dbg({other, Other}),
+    cr:dbg({other, Other}),
     {undefined, undefined}.
 
 
@@ -42,7 +42,7 @@ render_for_column(_) ->
             evo:tag(input, 
                     [{type, "text"},
                      {name, atom_to_list(Name)},
-                     {value, OutValue}], "")
+                     {value, OutValue}], [])
     end.
 
 
@@ -53,5 +53,26 @@ get_out_value(Val, Func) -> Func(Val).
 
 render_field(Form, Name, Values) ->
     Field = proplists:get_value(Name, Form#evoform.fields),
-    Render = Field#evofield.render,
-    Render(Field, Values).
+    (Field#evofield.render)(Field, Values).
+
+
+parse_form(Form, OutValues) ->
+    InValues = [extract_value(Form, Field, OutValues) || {_Name, Field} <- Form#evoform.fields],
+    ok.
+
+extract_value(Form, Field, OutValues) ->
+    Func = Field#evofield.out_to_in,
+    Name = atom_to_list(Field#evofield.localName),
+    OutValue = proplists:get_value(Name, OutValues),
+
+    InValue = get_in_value(OutValue, Func, Field#evofield.null_if_empty),
+
+    cr:dbg({Field#evofield.localName, InValue}),
+    OutValue.
+
+
+get_in_value("", Func, true) -> null;
+get_in_value(Val, undefined, _) -> Val;
+get_in_value(Val, Func, _) -> Func(Val).
+                          
+    

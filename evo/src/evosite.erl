@@ -171,6 +171,8 @@ run_responders(State, Req, Callback, Args) ->
             wrap_template(State, Req, TemplateName, Data);
         {child, NewComponent, NewArgs} -> 
             run_responders(State, Req, NewComponent, NewArgs);
+        {error, Error} ->
+            display_error(Req, "Error: ~p~n", [Error]);
         {'EXIT', Error} ->
             display_error(Req, "Error: ~p~n", [Error]);
         not_found ->
