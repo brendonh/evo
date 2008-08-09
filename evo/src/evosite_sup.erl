@@ -51,7 +51,7 @@ init([{SiteName, SiteConf}]) ->
     Bits = lists:concat(
              lists:map(
                fun (B) -> start(B, EvoName, SiteConf) end,
-               [mochiweb, magicdb, evosite, evotemplate, components])),
+               [mochiweb, cometd, magicdb, evosite, evotemplate, components])),
 
     {ok,{{one_for_one,10,60}, Bits}}.
 
@@ -66,6 +66,12 @@ start(mochiweb, EvoName, SiteConf) ->
                     {port, proplists:get_value(port, SiteConf, ?DEFAULT_PORT)}, 
                     {loop, make_loop(EvoName)}]]},
       permanent,2000,worker,[mochiweb_socket_server]}];
+
+start(cometd, EvoName, _SiteConf) ->
+    application:load(cometd),
+    CometdName = evoutil:concat_atoms([EvoName, "_cometd"]),
+    [{CometdName, {cometd_sup, start_link, []},
+      permanent, 2000, supervisor, [cometd_sup]}];
 
 start(magicdb, EvoName, SiteConf) ->
     case proplists:get_value(dbinfo, SiteConf) of

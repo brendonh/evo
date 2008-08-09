@@ -26,7 +26,14 @@
 %% top supervisor of the tree.
 %%--------------------------------------------------------------------
 start(_Type, _StartArgs) ->
+
+    case error_logger:add_report_handler(cr) of
+        ok -> ok;
+        Err -> io:format("OH NO: ~p~n", [Err])
+    end,
+
     cr:dbg("Evo starting up"),
+
     case evo_sup:start_link() of
         {ok, Pid} -> 
             {ok, Pid};

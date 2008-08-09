@@ -41,7 +41,7 @@ start_link() ->
 %%--------------------------------------------------------------------
 init([]) ->
 
-    Specs = case application:get_env(sites) of
+    Specs = case application:get_env(evo, sites) of
                 undefined -> [];
                 {ok, Sites} ->
                     lists:map(fun spec_from_site/1, Sites)

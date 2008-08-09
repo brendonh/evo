@@ -60,6 +60,7 @@ start_link(EvoName, Name, Args) ->
 init([EvoName, TableName, [Table, ListCols, {List, View, Edit}]]) ->
     
     Templates = [{list, List}, {view, View}, {edit, Edit}],
+
     Callback = fun(Name) -> 
                        case proplists:get_value(Name, Templates, not_found) of
                            auto -> auto_template(Name);
@@ -105,7 +106,7 @@ handle_call({respond, Req, 'GET', ["list", PageStr]}, _From, State) ->
     Page = list_to_integer(PageStr),
     OffsetIndex = Page - 1,
 
-    Rows = ?DB({getRows, Table, [], {PageSize, PageSize*OffsetIndex}}),
+    Rows = ?DB({getRows, Table, [], {id, PageSize, PageSize*OffsetIndex}}),
 
     case State#state.listCols of
         all -> 

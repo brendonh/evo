@@ -30,7 +30,7 @@ filters_for_column({sql_float, _}) ->
                end end};
 filters_for_column(sql_real) -> filters_for_column({sql_float, 4});
 filters_for_column(Other) ->
-    cr:dbg({other, Other}),
+    %cr:dbg({other, Other}),
     {undefined, undefined}.
 
 
