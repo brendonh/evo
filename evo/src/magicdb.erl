@@ -67,19 +67,10 @@ init([DBEnv, Evoname]) ->
 %%                                      {stop, Reason, State}
 %% Description: Handling call messages
 %%--------------------------------------------------------------------
-handle_call({rowByID, Table, ID}, From, State) ->
-    handle_call({getRows, Table, [{id, <<"=">>, ID}]}, From, State);
-
-handle_call({getRows, Table, Wheres}, From, State) ->
-    handle_call({getRows, Table, Wheres, {none, none, none}, none}, From, State);
-
-handle_call({getRows, Table, Wheres, {_,_,_}=OLO}, From, State) ->
-    handle_call({getRows, Table, Wheres, OLO, none}, From, State);
-
-handle_call({getRows, Table, Wheres, {_,_,_}=OLO, RefAction}, _From, State) ->
+handle_call({get, QueryInfo}, _From, State) ->
     Schemas = State#state.schemas,
     DBRef = State#state.dbRef,
-    Reply = retrieve_rows(Table, Wheres, OLO, Schemas, DBRef, RefAction),
+    Reply = retrieve_rows(Schemas, DBRef, QueryInfo),
     {reply, Reply, State};
 
 handle_call({getColumns, Table}, _From, State) ->
@@ -114,6 +105,35 @@ handle_call({tuple_to_json_obj, Table, Record}, _From, State) ->
     Plist = lists:zipwith3(fun(K, T, V) -> {K, convert_to_binary(T, V)} end, 
                            Names, Types, tuple_to_list(Record)),
     {reply, {obj, Plist}, State};
+
+
+% Backward compatibility
+handle_call({rowByID, Table, ID}, From, State) ->
+    handle_call({get, 
+                 [{table, Table}, {where, [{id, <<"=">>, ID}]}]},
+                From, State);
+
+% Backward compatibility
+handle_call({getRows, Table, Wheres}, From, State) ->
+    handle_call({get, 
+                 [{table, Table}, {where, Wheres}]},
+                From, State);
+
+% Backward compatibility
+handle_call({getRows, Table, Wheres, {Order,Limit,Offset}}, From, State) ->
+    handle_call({get, 
+                 [{table, Table}, {where, Wheres}, 
+                  {order, Order}, {limit, Limit}, {offset, Offset}]},
+                From, State);
+
+% Backward compatibility
+handle_call({getRows, Table, Wheres, {Order,Limit,Offset}, RefAction}, From, State) ->
+    handle_call({get, 
+                 [{table, Table}, {where, Wheres},
+                  {order, Order}, {limit, Limit}, {offset, Offset},
+                  {ref_action, RefAction}]},
+                From, State);
+
 
 handle_call(Request, _From, State) ->
     cr:dbg({unknown_request, Request}),
@@ -167,9 +187,12 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%--------------------------------------------------------------------
 
-retrieve_rows(Table, Wheres, OLO, Schemas, DBRef, RefAction) ->
+%retrieve_rows(Table, Wheres, OLO, Schemas, DBRef, RefAction) ->
+retrieve_rows(Schemas, DBRef, QueryInfo) ->
+    Table = proplists:get_value(table, QueryInfo),
+    RefAction = proplists:get_value(ref_action, QueryInfo, none),
     Schema = get_schema(Table, Schemas, DBRef),
-    case get_rows(Table, Wheres, OLO, Schema, DBRef) of
+    case get_rows(Schema, DBRef, QueryInfo) of
         {ok, RawRows} ->
             lists:map(fun(Row) -> 
                               handle_row(Row, RefAction, Schema, Schemas, DBRef) 
@@ -226,7 +249,7 @@ get_table_oid(TableName, DBRef) ->
     Args = [{{sql_varchar, 128}, [TableName]}],
     {selected, _Cols, [{OID}]} = odbc:param_query(DBRef, SQL, Args),
     OID.
-  
+
 
 get_table_foreignkeys(TableOID, DBRef) ->
     SQL = "SELECT pg_attribute.attname, pg_class.relname " ++
@@ -243,74 +266,19 @@ get_table_foreignkeys(TableOID, DBRef) ->
     Keys.
 
 
-get_rows(Table, [], {Order, Limit, Offset},_Schema, DBRef) ->
-    TableName = atom_to_list(Table),
+get_rows(Schema, DBRef, QueryInfo) -> %Table, Wheres, {Order, Limit, Offset}, Schema, DBRef) ->
 
-    case Order of
-        none -> OrderBy = "";
-        {Col, asc} -> OrderBy = " ORDER BY " ++ atom_to_list(Col) ++ " ";
-        {Col, desc} -> OrderBy = " ORDER BY " ++ atom_to_list(Col) ++ " DESC ";
-        Col -> OrderBy = " ORDER BY " ++ atom_to_list(Col) ++ " "
-    end,
+    TableName = atom_to_list(proplists:get_value(table, QueryInfo)),
+    Wheres = proplists:get_value(where, QueryInfo, []),
 
-    BaseSQL = "SELECT * FROM " ++ TableName ++ OrderBy,
-
-    case {Limit, Offset} of
-        {none, none} -> SQL = BaseSQL;
-        {_, none} -> SQL = BaseSQL ++ " LIMIT " ++ integer_to_list(Limit);
-        {_, _} -> SQL = BaseSQL ++ " LIMIT " ++ integer_to_list(Limit)
-                      ++ " OFFSET " ++ integer_to_list(Offset)
-    end,
-
-    Result = odbc:sql_query(DBRef, SQL),
-
-    case Result of
-        {selected, _Cols, Rows} -> 
-            {ok, Rows};
-        {error, Reason} -> 
-            error_logger:error_msg("SQL error ~p~n", [Reason]),
-            cr:dbg({error, Reason}),
-            {error, sql}
-    end;
-
-get_rows(Table, Wheres, {Order, Limit, Offset}, Schema, DBRef) ->
-    TableName = atom_to_list(Table),
-    
     Columns = proplists:get_value(columns, Schema),
 
-    {WhereBits, WhereArgs} = lists:foldl(
-             fun(Where, {Bits, Args}) ->
-                     case Where of
-                         none -> {Bits, Args};
-                         _ ->
-                             {WhereBit, ArgBit} = munge_where(Where, Columns),
-                             {[WhereBit|Bits], lists:append(ArgBit, Args)}
-                     end
-             end,
-             {[], []},
-             Wheres),
-        
-    WhereClause = lists:concat(lists:reverse(lists:foldl(
-                    fun maybe_and/2, [], lists:reverse(WhereBits)))),
+    {WhereClause, WhereArgs} = build_where_bits(Columns, Wheres),
+    OLO = build_olo(QueryInfo),
 
-    BaseSQL = "SELECT * FROM " ++ TableName ++ " WHERE " ++ WhereClause,
+    SQL = "SELECT * FROM " ++ TableName ++ WhereClause ++ OLO,
 
-    case Order of
-        none -> OrderBy = "";
-        {Col, asc} -> OrderBy = " ORDER BY " ++ atom_to_list(Col) ++ " ";
-        {Col, desc} -> OrderBy = " ORDER BY " ++ atom_to_list(Col) ++ " DESC ";
-        Col -> OrderBy = " ORDER BY " ++ atom_to_list(Col) ++ " "
-    end,
-
-    BaseSQL2 = BaseSQL ++ OrderBy,
-
-    case {Limit, Offset} of
-        {none, none} -> SQL = BaseSQL2;
-        {Limit, none} -> SQL = BaseSQL2 ++ " LIMIT " ++ integer_to_list(Limit);
-        {Limit, Offset} -> SQL = BaseSQL2 
-                               ++ " LIMIT " ++ integer_to_list(Limit)
-                               ++ " OFFSET " ++ integer_to_list(Offset)
-    end,
+    cr:dbg({sql, SQL}),
 
     % Believe it or not, param_query breaks if there are no placeholders.
     case WhereArgs of
@@ -330,6 +298,55 @@ get_rows(Table, Wheres, {Order, Limit, Offset}, Schema, DBRef) ->
             {error, sql}
     end.
 
+
+build_where_bits(Columns, []) ->
+    {"", []};
+build_where_bits(Columns, Wheres) ->
+    {WhereBits, WhereArgs} = 
+        lists:foldl(
+          fun(Where, {Bits, Args}) ->
+                  case Where of
+                      none -> {Bits, Args};
+                      _ ->
+                          {WhereBit, ArgBit} = munge_where(Where, Columns),
+                          {[WhereBit|Bits], lists:append(ArgBit, Args)}
+                  end
+          end,
+          {[], []},
+          Wheres),
+    WhereClause = lists:concat(
+                    lists:reverse(
+                      lists:foldl(
+                        fun maybe_and/2, [], lists:reverse(WhereBits)))),
+
+    {" WHERE " ++ WhereClause, WhereArgs}.
+
+
+build_olo(QueryInfo) ->
+
+    Order = proplists:get_value(order, QueryInfo, none),
+
+    OrderBy = case Order of
+        none -> "";
+        {Col, asc} -> " ORDER BY " ++ atom_to_list(Col) ++ " ";
+        {Col, desc} -> " ORDER BY " ++ atom_to_list(Col) ++ " DESC ";
+        Col -> " ORDER BY " ++ atom_to_list(Col) ++ " "
+    end,
+
+    Limit = proplists:get_value(limit, QueryInfo, none),
+    Offset = proplists:get_value(offset, QueryInfo, none),
+
+    OrderBy ++ case {Limit, Offset} of
+                   {none, none} -> 
+                       "";
+                   {Limit, none} -> 
+                       " LIMIT " ++ integer_to_list(Limit);
+                   {Limit, Offset} -> 
+                       " LIMIT " ++ integer_to_list(Limit)
+                           ++ " OFFSET " ++ integer_to_list(Offset)
+    end.
+
+
 maybe_and(Bit, []) ->
     [Bit];
 maybe_and(Bit, Acc) ->
@@ -339,7 +356,10 @@ get_referee_values(Row, Schema, Schemas, DBRef) ->
     lists:map(fun({ColumnName, RefTableName}) ->
                       RefID = proplists:get_value(list_to_atom(ColumnName), Row),
                       RefTable = list_to_atom(RefTableName),
-                      [RefRow] = retrieve_rows(RefTable, [{id, <<"=">>, RefID}], {none,none}, Schemas, DBRef, tree),
+                      [RefRow] = retrieve_rows(Schemas, DBRef, 
+                                               [{table, RefTable}, 
+                                                {where, [{id, <<"=">>, RefID}]},
+                                                {ref_action, tree}]),
                       {RefTable, RefRow}
               end,
               proplists:get_value(foreign_keys, Schema)).
