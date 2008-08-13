@@ -10,7 +10,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/2, munge_where/2]).
+-export([start_link/2, munge_where/3]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -191,25 +191,26 @@ code_change(_OldVsn, State, _Extra) ->
 retrieve_rows(Schemas, DBRef, QueryInfo) ->
     Table = proplists:get_value(table, QueryInfo),
     RefAction = proplists:get_value(ref_action, QueryInfo, none),
-    Schema = get_schema(Table, Schemas, DBRef),
-    case get_rows(Schema, DBRef, QueryInfo) of
+    TableSchemas = get_schemas(Table, Schemas, DBRef),
+    Aliases = build_alias_list(Table),
+    case get_rows(TableSchemas, Aliases, DBRef, QueryInfo) of
         {ok, RawRows} ->
             lists:map(fun(Row) -> 
-                              handle_row(Row, RefAction, Schema, Schemas, DBRef) 
+                              handle_row(Row, RefAction, TableSchemas, Schemas, Aliases, DBRef) 
                       end,
                       RawRows);
         {error, Error} ->
             {error, Error}
     end.
 
-handle_row(Row, RefAction, Schema, Schemas, DBRef) ->
-    PropList = build_proplist(Row, Schema),
+handle_row(Row, RefAction, TableSchemas, Schemas, Aliases, DBRef) ->
+    PropList = build_proplist(Row, TableSchemas, Aliases),
     case RefAction of
         bag ->
-            Referees = get_referee_values(PropList, Schema, Schemas, DBRef),
+            Referees = get_referee_values(PropList, TableSchemas, Schemas, DBRef),
             {PropList, flatten_reftree(Referees)};
         tree ->
-            Referees = get_referee_values(PropList, Schema, Schemas, DBRef),
+            Referees = get_referee_values(PropList, TableSchemas, Schemas, DBRef),
             {PropList, Referees};
         none ->
             PropList
@@ -228,7 +229,23 @@ flatten_reftree([{Table, {Props,Children}}|Tail], Bag) ->
     flatten_reftree(Tail, NewBag).   
 
 
-get_schema(Table, Schemas, DBRef) ->
+get_schemas(Tables, Schemas, DBRef) ->
+    get_schemas(Tables, Schemas, DBRef, []).
+
+get_schemas([], _, _, Acc) ->
+    lists:reverse(Acc);
+get_schemas([First|Rest], Schemas, DBRef, Acc) ->
+    get_schemas(Rest, Schemas, DBRef, 
+                [get_schema(First, Schemas, DBRef)|Acc]).
+
+
+get_schema(TableSpec, Schemas, DBRef) ->
+
+    Table = case TableSpec of
+                {Tab, _Alias} -> Tab;
+                Tab -> Tab
+            end,
+
     case ets:lookup(Schemas, Table) of
         [{Table, Schema}] ->
             Schema;
@@ -237,7 +254,7 @@ get_schema(Table, Schemas, DBRef) ->
             {ok, Columns} = odbc:describe_table(DBRef, TableName),
             OID = get_table_oid(TableName, DBRef),
             Keys = get_table_foreignkeys(OID, DBRef),
-            Schema = [{columns, Columns}, {oid, OID}, {foreign_keys, Keys}],
+            Schema = [{name, Table}, {columns, Columns}, {oid, OID}, {foreign_keys, Keys}],
             ets:insert(Schemas, {Table, Schema}),
             cr:dbg({schema_okay, Table})
     end,
@@ -266,17 +283,24 @@ get_table_foreignkeys(TableOID, DBRef) ->
     Keys.
 
 
-get_rows(Schema, DBRef, QueryInfo) -> %Table, Wheres, {Order, Limit, Offset}, Schema, DBRef) ->
+get_rows(TableSchemas, Aliases, DBRef, QueryInfo) ->
 
-    TableName = atom_to_list(proplists:get_value(table, QueryInfo)),
+    FromClause = case proplists:get_value(from, QueryInfo, none) of
+                     none -> proplists:get_value(table, QueryInfo);
+                     Something -> Something
+                 end,
+
+    FromList = build_from_list(FromClause, Aliases),
     Wheres = proplists:get_value(where, QueryInfo, []),
 
-    Columns = proplists:get_value(columns, Schema),
+    Columns = [{proplists:get_value(name, TableSchema), 
+                proplists:get_value(columns, TableSchema)}
+               || TableSchema <- TableSchemas],
 
-    {WhereClause, WhereArgs} = build_where_bits(Columns, Wheres),
+    {WhereClause, WhereArgs} = build_where_bits(Columns, Aliases, Wheres),
     OLO = build_olo(QueryInfo),
 
-    SQL = "SELECT * FROM " ++ TableName ++ WhereClause ++ OLO,
+    SQL = lists:flatten(["SELECT * FROM ", FromList, WhereClause, OLO]),
 
     cr:dbg({sql, SQL}),
 
@@ -290,7 +314,6 @@ get_rows(Schema, DBRef, QueryInfo) -> %Table, Wheres, {Order, Limit, Offset}, Sc
 
     case Result of
         {selected, _Cols, Rows} -> 
-            %cr:dbg({rows, Rows}),
             {ok, Rows};
         {error, Reason} -> 
             error_logger:error_msg("SQL error ~p~n", [Reason]),
@@ -299,16 +322,64 @@ get_rows(Schema, DBRef, QueryInfo) -> %Table, Wheres, {Order, Limit, Offset}, Sc
     end.
 
 
-build_where_bits(Columns, []) ->
+build_alias_list(TableSpec) ->
+    build_alias_list(TableSpec, []).
+
+build_alias_list([], Acc) ->
+    lists:reverse(Acc);
+build_alias_list([{_T, _A}=TA|Rest], Acc) ->
+    build_alias_list(Rest, [TA|Acc]);
+build_alias_list([Tab|Rest], Acc) ->
+    build_alias_list(Rest, [{Tab, none}|Acc]).
+
+
+build_from_list({leftjoin, [{LT, _, _, _}|_]=Conds}, Aliases) ->
+    lists:foldl(
+      fun({LTab, LCol, RTab, RCol}, Acc) ->
+              LColN = column_name(LTab, LCol, Aliases),
+              RColN = column_name(RTab, RCol, Aliases),
+              [Acc, " LEFT JOIN ", table_name(RTab, Aliases), 
+               " ON ", LColN, " = ", RColN]
+      end,
+      [table_name(LT, Aliases)],
+      Conds);
+build_from_list(Table, Aliases) ->
+    table_name(Table, Aliases).
+   
+
+table_name(TableRef, Aliases) ->
+    case get_table_for_alias(TableRef, Aliases) of
+        {alias_for, Table} -> [atom_to_list(Table), " AS ", atom_to_list(TableRef)];
+        Table -> atom_to_list(Table)
+    end.
+            
+
+get_table_for_alias(Table, [{Table, none}|_Rest]) ->
+    Table;
+get_table_for_alias(Alias, [{Table, Alias}|_Rest]) ->
+    {alias_for, Table};
+get_table_for_alias(Alias, [_|Rest]) ->
+    get_table_for_alias(Alias, Rest).
+
+
+column_name(Tab, Col, Aliases) ->
+    TableName = case proplists:get_value(Tab, Aliases, none) of
+                    none -> atom_to_list(Tab);
+                    Alias -> atom_to_list(Alias)
+                end,
+    [TableName, ".", atom_to_list(Col)].
+
+
+build_where_bits(_Columns, _Aliases, []) ->
     {"", []};
-build_where_bits(Columns, Wheres) ->
+build_where_bits(Columns, Aliases, Wheres) ->
     {WhereBits, WhereArgs} = 
         lists:foldl(
           fun(Where, {Bits, Args}) ->
                   case Where of
                       none -> {Bits, Args};
                       _ ->
-                          {WhereBit, ArgBit} = munge_where(Where, Columns),
+                          {WhereBit, ArgBit} = munge_where(Where, Columns, Aliases),
                           {[WhereBit|Bits], lists:append(ArgBit, Args)}
                   end
           end,
@@ -319,7 +390,7 @@ build_where_bits(Columns, Wheres) ->
                       lists:foldl(
                         fun maybe_and/2, [], lists:reverse(WhereBits)))),
 
-    {" WHERE " ++ WhereClause, WhereArgs}.
+    {[" WHERE ", WhereClause], WhereArgs}.
 
 
 build_olo(QueryInfo) ->
@@ -328,23 +399,23 @@ build_olo(QueryInfo) ->
 
     OrderBy = case Order of
         none -> "";
-        {Col, asc} -> " ORDER BY " ++ atom_to_list(Col) ++ " ";
-        {Col, desc} -> " ORDER BY " ++ atom_to_list(Col) ++ " DESC ";
-        Col -> " ORDER BY " ++ atom_to_list(Col) ++ " "
+        {Col, asc} -> [" ORDER BY ", atom_to_list(Col), " "];
+        {Col, desc} -> [" ORDER BY ", atom_to_list(Col), " DESC "];
+        Col -> [" ORDER BY ", atom_to_list(Col), " "]
     end,
 
     Limit = proplists:get_value(limit, QueryInfo, none),
     Offset = proplists:get_value(offset, QueryInfo, none),
 
-    OrderBy ++ case {Limit, Offset} of
-                   {none, none} -> 
-                       "";
-                   {Limit, none} -> 
-                       " LIMIT " ++ integer_to_list(Limit);
-                   {Limit, Offset} -> 
-                       " LIMIT " ++ integer_to_list(Limit)
-                           ++ " OFFSET " ++ integer_to_list(Offset)
-    end.
+    [OrderBy, case {Limit, Offset} of
+                  {none, none} -> 
+                      "";
+                  {Limit, none} -> 
+                      [" LIMIT ", integer_to_list(Limit)];
+                  {Limit, Offset} -> 
+                      [" LIMIT ", integer_to_list(Limit),
+                       " OFFSET ", integer_to_list(Offset)]
+    end].
 
 
 maybe_and(Bit, []) ->
@@ -365,14 +436,23 @@ get_referee_values(Row, Schema, Schemas, DBRef) ->
               proplists:get_value(foreign_keys, Schema)).
 
 
-build_proplist(RawRow, Schema) ->
-    ColumnNames = proplists:get_value(columns, Schema),
-    Columns = lists:map(
-                fun({Name, _Type}) -> list_to_atom(Name) end,
-                ColumnNames),
+build_proplist(RawRow, TableSchemas, Aliases) ->
+    Columns = lists:flatten(
+                [build_table_proplist(S, Aliases) || S <- TableSchemas]),
     Values = tuple_to_list(RawRow),
     lists:zip(Columns, Values).
 
+build_table_proplist(Schema, Aliases) ->
+    Table = proplists:get_value(name, Schema),
+    Alias = proplists:get_value(Table, Aliases),
+    [table_column_atom(Table, Alias, Col)
+     || {Col, _Type} <- proplists:get_value(columns, Schema)].
+
+
+table_column_atom(_Table, none, Col) ->
+    list_to_atom(Col);
+table_column_atom(Table, Alias, Col) ->
+    list_to_atom(lists:concat([Alias, "_", Col])).
 
 maybe_null(null) -> null;
 maybe_null(0) -> 0;
@@ -392,10 +472,10 @@ fix_coltype('SQL_TYPE_TIME') -> {sql_char, 8};
 fix_coltype('SQL_TYPE_TIMESTAMP') -> {sql_char, 19};
 fix_coltype(Else) -> Else.
 
-munge_where(BitTuple, Columns) ->
+munge_where(BitTuple, Columns, Aliases) ->
     BitList = tuple_to_list(BitTuple),
     Column = find_column(BitList),
-    ColType = fix_coltype(proplists:get_value(atom_to_list(Column), Columns)),
+    ColType = fix_coltype(find_colType(Column, Columns, Aliases)),
     case ColType of
         none ->
             {Where, Args} = {BitList, []};
@@ -405,19 +485,44 @@ munge_where(BitTuple, Columns) ->
     WhereString = space_join(Where),
     {WhereString, Args}.
 
-find_column([Bit|_Rest]) when is_atom(Bit) ->
-    Bit;
+find_column([Col|_Rest]) when is_atom(Col) ->
+    Col;
+find_column([{Table, Col}|_Rest])
+  when is_atom(Table) andalso is_atom(Col) ->
+    {Table, Col};
 find_column([_Bit|Rest]) ->
     find_column(Rest);
 find_column([]) ->
     none.
 
+
+find_colType({TableRef, Col}, Columns, Aliases) ->
+    Table = case get_table_for_alias(TableRef, Aliases) of
+                {alias_for, T} -> T;
+                T -> T
+            end,
+    TableColumns = proplists:get_value(Table, Columns),
+    proplists:get_value(atom_to_list(Col), TableColumns);
+find_colType(Col, Columns, _Aliases) ->
+    ColName = atom_to_list(Col),
+    case [ColType || {_Table, TableColumns} <- Columns,
+                     ColType <- [proplists:get_value(ColName, TableColumns, none)],
+                     ColType =/= none] of
+        [] -> exit({unknown_column, Col});
+        [ColType] -> ColType;
+        Several -> exit({ambiguous_column, Col, Several})
+    end.
+
+
 munge_wherebits([Bit|Rest], ColType, {Where, Args}) when is_atom(Bit) ->
     munge_wherebits(Rest, ColType, {[Bit|Where], Args});
 
-munge_wherebits([Bit|Rest], ColType, {Where, Args}) when is_tuple(Bit) ->
-    % SQL placeholders don't work with "in (...)"
-    Entries = tuple_to_list(Bit),
+munge_wherebits([{Table, Col}|Rest], ColType, {Where, Args})
+  when is_atom(Table) andalso is_atom(Col) ->
+    munge_wherebits(Rest, ColType, {[lists:concat([Table,".",Col])|Where], Args});
+
+munge_wherebits([{list, Entries}|Rest], ColType, {Where, Args}) ->
+    % SQL placeholders don't work as "in ?", only as "in (?, ?, ...)"
     Count = length(Entries),
     Placeholders = comma_join(lists:duplicate(Count, "?")),
     WhereBit = lists:concat(["(", Placeholders, ")"]),
