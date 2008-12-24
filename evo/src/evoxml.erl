@@ -80,17 +80,14 @@ absorb_text([$<|_Rest]=XML, [], false) ->
     XML;
 absorb_text([$<|_Rest]=XML, Buffer, PWS) -> 
     {Buffer2, SWS} = skip_whitespace2(Buffer),
-    get(callback_module) ! {text, lists:concat([space_or_not(PWS),
+    get(callback_module) ! {text, lists:concat([PWS,
                                                 lists:reverse(Buffer2), 
-                                                space_or_not(SWS)])},
+                                                SWS])},
     XML;
 absorb_text([First|Rest], Buffer, PWS) -> 
     absorb_text(Rest, [First|Buffer], PWS);
 absorb_text([], _Buffer, _) ->
     erlang:error("Hit EOF while reading text").
-
-space_or_not(true) -> " ";
-space_or_not(false) -> "".
 
 absorb_attrs(XML) ->
     XML2 = skip_whitespace(XML),
@@ -208,10 +205,10 @@ skip_whitespace([$\t|Rest]) -> skip_whitespace(Rest);
 skip_whitespace(Rest) -> Rest.
 
 
-skip_whitespace2(Text) -> skip_whitespace2(Text, false).
+skip_whitespace2(Text) -> skip_whitespace2(Text, []).
 
-skip_whitespace2([32|Rest], _) -> skip_whitespace2(Rest, true);
-skip_whitespace2([$\r|Rest], _) -> skip_whitespace2(Rest, true);
-skip_whitespace2([$\n|Rest], _) -> skip_whitespace2(Rest, true);
-skip_whitespace2([$\t|Rest], _) -> skip_whitespace2(Rest, true);
-skip_whitespace2(Rest, Found) -> {Rest, Found}.
+skip_whitespace2([32|Rest], WS) -> skip_whitespace2(Rest, [32|WS]);
+skip_whitespace2([$\r|Rest], WS) -> skip_whitespace2(Rest, [$\r|WS]);
+skip_whitespace2([$\n|Rest], WS) -> skip_whitespace2(Rest, [$\n|WS]);
+skip_whitespace2([$\t|Rest], WS) -> skip_whitespace2(Rest, [$\t|WS]);
+skip_whitespace2(Rest, WS) -> {Rest, lists:reverse(WS)}.

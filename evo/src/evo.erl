@@ -12,10 +12,10 @@
 run_file(Filename, InitialData) ->
     run_file(Filename, InitialData, true).
 
-run_file(Filename, InitialData, Pretty) ->
+run_file(Filename, InitialData, Conf) ->
     {ok, UTF8} = file:read_file(Filename),
     {ok, UTF32} = from_binary(UTF8),
-    case run(UTF32, InitialData, Pretty) of
+    case run(UTF32, InitialData, Conf) of
         {'EXIT', _, Error} -> {error, Error};
         Result -> to_binary(Result)
     end.
@@ -24,6 +24,7 @@ run(Content, InitialData) ->
     run(Content, InitialData, []).
 
 run(Content, InitialData, Conf) ->   
+    process_flag(trap_exit, true),
     Self = self(),
     Template = spawn_link(fun() -> prepare(Content) end),
     Template ! {run, InitialData, Conf, Self},
@@ -79,12 +80,20 @@ accept_runs(State) ->
             Pretty = proplists:get_value(pretty, Conf, true),
             I = case Pretty of
                     true -> fun indenticate/1;
-                    false -> fun noindenticate/1
+                    false -> fun noindenticate/1;
+                    raw -> fun rawindenticate/1
                 end,
             Output = lists:flatten(lists:foldl(
                                      fun(Elem, InAcc) -> [I(Elem)|InAcc] end,
                                      [], TopTags)),
-            From ! {self(), result, string:strip(Output, right, $\n)},
+
+            Replace = proplists:get_value(replace_entities, Conf, false),
+            Final = case Replace of
+                        true -> replace_entities(Output);
+                        false -> Output
+                    end,
+
+            From ! {self(), result, string:strip(Final, right, $\n)},
             accept_runs(State);
 
         finished -> ok;
@@ -95,6 +104,35 @@ accept_runs(State) ->
 
     end.
 
+
+replace_entities(String) ->
+    replace_entities(String, [], []).
+
+replace_entities([$&|Rest], Out, []) ->
+    replace_entities(Rest, Out, [$&]);
+replace_entities([C|Rest], Out, []) ->
+    replace_entities(Rest, [C|Out], []);
+replace_entities([$;|Rest], Out, Buf) ->
+    Char = translate_entity(lists:reverse([$;|Buf])),
+    replace_entities(Rest, [Char|Out], []);
+replace_entities([C|Rest], Out, Buf) ->
+    replace_entities(Rest, Out, [C|Buf]);
+replace_entities([], Out, []) ->
+    lists:reverse(Out);
+replace_entities([], Out, Buf) ->
+    cr:dbg({entity_buffer_remaining, Buf}),
+    lists:reverse(Out).
+
+
+translate_entity("&lt;") -> $<;
+translate_entity("&gt;") -> $>;
+translate_entity("&amp;") -> $&;
+translate_entity("&quot;") -> $";
+translate_entity("&apos;") -> $';
+translate_entity(Other) ->
+    cr:dbg({unknown_entity, Other}),
+    $?.
+     
 
 get_tags(State, InitialData, Conf) ->
     ets:delete_all_objects(get(dataCache)),
@@ -304,14 +342,25 @@ indenticate(TagSoup) ->
     string:join(lists:map(fun lists:flatten/1, LineList), "\n") ++ [$\n].
 
 noindenticate(TagSoup) ->
-    PF = partial_flatten(TagSoup),
+    noindenticate(TagSoup, false).
+
+rawindenticate(TagSoup) ->
+    noindenticate(TagSoup, true).
+
+
+noindenticate(TagSoup, PreserveWhitespace) ->
+    PF = partial_flatten(TagSoup, PreserveWhitespace),
     Joined = noindent(PF),
     lists:flatten(Joined).
 
-partial_flatten({Tag, Content, End}) ->
+
+partial_flatten(TagSoup) ->
+    partial_flatten(TagSoup, false).
+
+partial_flatten({Tag, Content, End}, PreserveWhitespace) ->
     FlatTag = lists:flatten(Tag),
     FlatEnd = lists:flatten(End),
-    Inside = partial_flatten(Content),
+    Inside = partial_flatten(Content, PreserveWhitespace),
     case Inside of
         [C1|_] when is_integer(C1) and C1 =:= $< -> 
             lists:concat([FlatTag, Inside, FlatEnd]);
@@ -319,14 +368,17 @@ partial_flatten({Tag, Content, End}) ->
             {FlatTag, Inside, FlatEnd}
     end;
 
-partial_flatten({tags, Tags}) ->
-    partial_flatten(Tags);
+partial_flatten({tags, Tags}, PreserveWhitespace) ->
+    partial_flatten(Tags, PreserveWhitespace);
 
-partial_flatten([C|_]=Text) when is_integer(C) ->
+partial_flatten([C|_]=Text, false) when is_integer(C) ->
     newlines_to_spaces(Text);
 
-partial_flatten(Stuff) when is_list(Stuff) ->
-    Before = lists:map(fun partial_flatten/1, Stuff),
+partial_flatten([C|_]=Text, true) when is_integer(C) ->
+    Text;
+
+partial_flatten(Stuff, PreserveWhitespace) when is_list(Stuff) ->
+    Before = lists:map(fun(E) -> partial_flatten(E, PreserveWhitespace) end, Stuff),
     {After, AllText} = join_text(Before),
     Flat = lists:flatten(After),
     case AllText andalso length(Flat) < 80 of

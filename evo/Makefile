@@ -16,7 +16,7 @@ all: compile
 .PHONY: clean cleaner run
 
 test: compile
-	erl -noshell -pa ebin -s evotest test -s init stop
+	erl -noshell -pa ebin -pa ../avl_common/ebin -s evotest test -s init stop
 
 run: compile
 	erl -noshell -pa ebin -s evorun run -s init stop
