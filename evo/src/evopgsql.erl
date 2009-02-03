@@ -1,5 +1,7 @@
 -module(evopgsql).
 
+-include("evoconv.hrl").
+
 -export([start/0, start/1, request/1, template/1]).
 
 -define(DOC_ROOT, "static").
@@ -27,7 +29,7 @@ start(Port) ->
     magicdb:start_link({dsn, ?DSN}),
     mochiweb_http:start([{port, Port}, {loop, {?MODULE, request}}]),
 
-    cr:dbg({evopgsql, running}),
+    ?DBG({evopgsql, running}),
 
     receive
         finish -> ok

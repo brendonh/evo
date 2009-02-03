@@ -6,6 +6,7 @@
          var/1, put_var/2, put_var_cache/3, conf/1, tag/3]).
 
 -include("evo.hrl").
+-include("evoconv.hrl").
 
 -define(MAX_LINE, 80).
 
@@ -99,7 +100,7 @@ accept_runs(State) ->
         finished -> ok;
 
         Other ->
-            cr:dbg({unknown_command, Other}),
+            ?DBG({unknown_command, Other}),
             accept_runs(State)
 
     end.
@@ -120,7 +121,7 @@ replace_entities([C|Rest], Out, Buf) ->
 replace_entities([], Out, []) ->
     lists:reverse(Out);
 replace_entities([], Out, Buf) ->
-    cr:dbg({entity_buffer_remaining, Buf}),
+    ?DBG({entity_buffer_remaining, Buf}),
     lists:reverse(Out).
 
 
@@ -130,7 +131,7 @@ translate_entity("&amp;") -> $&;
 translate_entity("&quot;") -> $";
 translate_entity("&apos;") -> $';
 translate_entity(Other) ->
-    cr:dbg({unknown_entity, Other}),
+    ?DBG({unknown_entity, Other}),
     $?.
      
 

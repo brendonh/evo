@@ -9,6 +9,8 @@
 
 -behaviour(gen_server).
 
+-include("evoconv.hrl").
+
 %% API
 -export([start_link/0, start_link/1]).
 
@@ -50,13 +52,13 @@ init([EvoName]) ->
     process_flag(trap_exit, true),
     Name = evoutil:concat_atoms([EvoName, "_templateCache"]),
     ets:new(Name, [private, set, named_table]),
-    cr:dbg({evotemplate, EvoName, running}),
+    ?DBG({evotemplate, EvoName, running}),
     {ok, #state{cacheName=Name}};
 
 init([]) ->
     process_flag(trap_exit, true),
     ets:new(templateCache, [private, set, named_table]),
-    cr:dbg({evotemplate, singleton, running}),
+    ?DBG({evotemplate, singleton, running}),
     {ok, #state{cacheName=templateCache}}.
 
 %%--------------------------------------------------------------------
@@ -90,7 +92,7 @@ handle_call({Command, TemplateName, Data, Conf, Callback}, _From, State) ->
     {reply, Result, State};
 
 handle_call(Request, _From, State) ->
-    cr:dbg({other_request, Request}),
+    ?DBG({other_request, Request}),
     Reply = ok,
     {reply, Reply, State}.
 

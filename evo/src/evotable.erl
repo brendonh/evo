@@ -9,6 +9,8 @@
 
 -behaviour(gen_server).
 
+-include("evoconv.hrl").
+
 %% API
 -export([start_link/3]).
 
@@ -59,6 +61,8 @@ start_link(EvoName, Name, Args) ->
 %%--------------------------------------------------------------------
 init([EvoName, TableName, [Table, ListCols, {List, View, Edit}]]) ->
     
+    ?DBG({EvoName, TableName, running}),
+
     Templates = [{list, List}, {view, View}, {edit, Edit}],
 
     Callback = fun(Name) -> 
@@ -144,7 +148,7 @@ handle_call({respond, Req, 'GET', ["edit", RowID]}, _From, State) ->
 handle_call({respond, Req, 'POST', ["edit", RowID]}, _From, State) ->
 
     OutValues = mochiweb_multipart:parse_form(Req),
-    cr:dbg({out_values, OutValues}),
+    ?DBG({out_values, OutValues}),
 
     evoform:parse_form(State#state.editForm, OutValues),
 
@@ -162,7 +166,7 @@ handle_call(_Request, _From, State) ->
 %%--------------------------------------------------------------------
 handle_cast(reload_columns, State) ->
     Table = State#state.table,
-    cr:dbg({reloading_columns, Table}),
+    ?DBG({reloading_columns, Table}),
     Columns = ?DB({getColumns, Table}),
 
     Form = evoform:form_from_colspec(Columns),
@@ -210,7 +214,7 @@ row_page(State, Req, RowID, Action) ->
 
     ID = list_to_integer(RowID),
 
-    Row = ?DB({rowByID, Table, ID}),
+    [Row] = ?DB({rowByID, Table, ID}),
 
     Data = [{columns, ColNames}, 
             {row, Row}, {id, ID},

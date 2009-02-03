@@ -1,6 +1,7 @@
 -module(evorender).
 
 -include("evo.hrl").
+-include("evoconv.hrl").
 
 -export([data/1, foreach/1, foreach/2, items/1, ifdata/1, get_data/1, format/2]).
 
@@ -101,8 +102,13 @@ eval(String, OldData, Row) ->
              none -> erl_eval:add_binding('OddEven', none, B4);
              _ -> erl_eval:add_binding('OddEven', lists:nth((Row rem 2) + 1, ['odd', 'even']), B4)
          end,
-    {value, Result, _Env2} = erl_eval:exprs(Parsed,B5),
-    Result.
+
+    case (catch erl_eval:exprs(Parsed,B5)) of
+        {value, Result, _Env2} -> Result;
+        Other -> throw({eval_error, String, Other})
+    end.
+%    {value, Result, _Env2} = erl_eval:exprs(Parsed,B5),
+%    Result.
 
 set_parent(Text, _) when is_list(Text) -> Text;
 set_parent(State, Parent) ->

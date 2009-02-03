@@ -9,6 +9,8 @@
 
 -behaviour(supervisor).
 
+-include("evoconv.hrl").
+
 %% API
 -export([start_link/1]).
 
@@ -83,7 +85,7 @@ start(magicdb, EvoName, SiteConf) ->
         undefined ->
             [];
         Other ->
-            cr:dbg({invalid_dbinfo, Other}),
+            ?DBG({invalid_dbinfo, Other}),
             []              
     end;
 
@@ -116,4 +118,4 @@ init_component(Path, EvoName, gen_server, Name) ->
 init_component(_Path, _EvoName, module, {_Mod, _InitArgs}) ->  [].
 
 make_loop(EvoName) ->
-    fun(Req) -> gen_server:call(EvoName, {respond, Req}) end.
+    fun(Req) -> gen_server:call(EvoName, {respond, Req}, infinity) end.

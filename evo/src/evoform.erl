@@ -1,6 +1,7 @@
 -module(evoform).
 
 -include("evo.hrl").
+-include("evoconv.hrl").
 
 -export([form_from_colspec/1, render_field/3, parse_form/2]).
 
@@ -30,7 +31,7 @@ filters_for_column({sql_float, _}) ->
                end end};
 filters_for_column(sql_real) -> filters_for_column({sql_float, 4});
 filters_for_column(Other) ->
-    %cr:dbg({other, Other}),
+    %?DBG({other, Other}),
     {undefined, undefined}.
 
 
@@ -67,7 +68,7 @@ extract_value(Form, Field, OutValues) ->
 
     InValue = get_in_value(OutValue, Func, Field#evofield.null_if_empty),
 
-    cr:dbg({Field#evofield.localName, InValue}),
+    ?DBG({Field#evofield.localName, InValue}),
     OutValue.
 
 

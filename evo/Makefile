@@ -1,57 +1,50 @@
-.SUFFIXES: .erl .beam .yrl
+PKG_NAME = evo
 
-.erl.beam:
-	erlc -W -o ebin $<
+SRC_DIR = src
+EBIN_DIR = ebin
+INCLUDE_DIR = include
 
-.beam: .erl
+MOCHIWEB_EBIN = ../mochiweb/ebin
+COMETD_EBIN = ../cometd/ebin
+MAGICDB_EBIN = ../RouteComplete/lib/magicdb/ebin
 
-VPATH = ebin
+SOURCES  = $(wildcard $(SRC_DIR)/*.erl)
+INCLUDES = $(wildcard $(INCLUDE_DIR)/*.hrl)
+TARGETS  = $(patsubst $(SRC_DIR)/%.erl, $(EBIN_DIR)/%.beam,$(SOURCES))
 
-ERL = erl -boot start_clean
+SHARED_INCLUDE = ../shared/$(INCLUDE_DIR)
+SHARED_EBIN = ../shared/$(EBIN_DIR)
 
-MODS = 
+ERLC_INCLUDES = -I $(INCLUDE_DIR) -I $(SHARED_INCLUDE)
+ERL_EBINS = -pa $(EBIN_DIR) -pa $(SHARED_EBIN) \
+            -pa $(MOCHIWEB_EBIN) -pa $(COMETD_EBIN) -pa $(MAGICDB_EBIN)
 
-all: compile
+ERLC = erlc
+ERLC_OPTS = $(ERLC_INCLUDES) -o $(EBIN_DIR) -Wall -v +debug_info
 
-.PHONY: clean cleaner run
+ERL_CMD=erl \
+	-boot start_sasl \
+	-config $(PKG_NAME) \
+	+W w \
+	$(ERL_EBINS)
 
-test: compile
-	erl -noshell -pa ebin -pa ../avl_common/ebin -s evotest test -s init stop
+all: $(TARGETS)
 
-run: compile
-	erl -noshell -pa ebin -s evorun run -s init stop
+run_prereqs: all
 
-site: compile
-	erl -boot start_sasl \
-		-pa ebin \
-		-pa ../mochiweb/ebin \
-		-pa ../RouteComplete/avl-common/ebin \
-		-config evo.config \
-		-s evo_entry start
+run: run_prereqs
+	$(ERL_CMD) -s ${PKG_NAME}_app launch
 
-pgsql: compile
-	erl -pa ebin \
-		-pa ../mochiweb/ebin \
-		-pa ../RouteComplete/avl-common/ebin \
-		-s evopgsql start 8081
+stop:
+	erl_call -a '$(PKG_NAME)_app stop_and_halt []' -sname $(PKG_NAME)
 
-pgsql_sasl: compile
-	erl -boot start_sasl \
-		-pa ebin \
-		-pa ../mochiweb/ebin \
-		-pa ../RouteComplete/avl-common/ebin \
-		-s evopgsql start 8081
+clean: cleanlog
+	rm -f $(TARGETS)
+	rm -f $(EBIN_DIR)/*.beam
 
-compile: ${MODS:%=%.beam} subdirs
+cleanlog:
+	rm -f auth.log report.log sasl_err.log
+	rm -f *.access
 
-subdirs:
-	cd src; make
-
-clean:
-	rm -f erl_crash.dump
-	cd ebin; rm -f *
-
-cleaner: clean
-	rm -f err.log
-	rm -f logs/*
-	find . -name '*~' | xargs rm
+$(EBIN_DIR)/%.beam: $(SRC_DIR)/%.erl $(INCLUDES)
+	$(ERLC) $(ERLC_OPTS) $<

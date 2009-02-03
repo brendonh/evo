@@ -9,6 +9,8 @@
 
 -behaviour(gen_server).
 
+-include("evoconv.hrl").
+
 %% API
 -export([start_link/2, db/2, template/2, link/3]).
 
@@ -80,7 +82,7 @@ init([EvoName, SiteConf]) ->
                        end
                end,
 
-    cr:dbg({evosite_running, EvoName}),
+    ?DBG({evosite_running, EvoName}),
     {ok, #state{evoname=EvoName,
                 components=ComponentTable,
                 templates=Templates,
@@ -103,7 +105,7 @@ handle_call({respond, Req}, _From, State) ->
     {reply, Response, State};
 
 handle_call(Request, _From, State) ->
-    cr:dbg({unknown_call, Request}),
+    ?DBG({unknown_call, Request}),
     Reply = ok,
     {reply, Reply, State}.
 
