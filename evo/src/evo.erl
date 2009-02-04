@@ -3,7 +3,8 @@
 -import (utf8, [from_binary/1, to_binary/1]).
 -export([prepare/1, run/2, run/3, run_file/2, run_file/3, new_id/0, 
          get_cache/1, put_cache/2,
-         var/1, put_var/2, put_var_cache/3, conf/1, tag/3]).
+         var/1, put_var/2, put_var_cache/3, conf/1, 
+         tag/3, escape_entities/1]).
 
 -include("evo.hrl").
 -include("evoconv.hrl").
@@ -134,6 +135,17 @@ translate_entity(Other) ->
     ?DBG({unknown_entity, Other}),
     $?.
      
+
+escape_entities(String) ->
+    lists:flatten([escape_entity(C) || C <- String]).
+
+escape_entity($<) -> "&lt;";
+escape_entity($>) -> "&gt;";
+escape_entity($&) -> "&amp;";
+escape_entity($") -> "&quot;";
+escape_entity($') -> "&apos;";
+escape_entity(C) -> C.
+
 
 get_tags(State, InitialData, Conf) ->
     ets:delete_all_objects(get(dataCache)),

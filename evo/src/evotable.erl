@@ -9,6 +9,7 @@
 
 -behaviour(gen_server).
 
+-include("evoform.hrl").
 -include("evoconv.hrl").
 
 %% API
@@ -25,11 +26,13 @@
 
  evoname,
  compname,
+ conf,
 
  table,
  listCols,
 
  columns = [],
+ immutable,
  templateCallback,
  editForm,
 
@@ -40,30 +43,27 @@
 %%====================================================================
 %% API
 %%====================================================================
-%%--------------------------------------------------------------------
-%% Function: start_link() -> {ok,Pid} | ignore | {error,Error}
-%% Description: Starts the server
-%%--------------------------------------------------------------------
-start_link(EvoName, Name, Args) ->
+start_link(EvoName, Name, Conf) ->
     CompName = evoutil:concat_atoms([EvoName, "_component_", Name]),
-    gen_server:start_link({local, CompName}, ?MODULE, [EvoName, Name, Args], []).
+    gen_server:start_link({local, CompName}, ?MODULE, [EvoName, Name, Conf], []).
+
 
 %%====================================================================
 %% gen_server callbacks
 %%====================================================================
 
-%%--------------------------------------------------------------------
-%% Function: init(Args) -> {ok, State} |
-%%                         {ok, State, Timeout} |
-%%                         ignore               |
-%%                         {stop, Reason}
-%% Description: Initiates the server
-%%--------------------------------------------------------------------
-init([EvoName, TableName, [Table, ListCols, {List, View, Edit}]]) ->
+init([EvoName, TableName, Conf]) ->
     
-    ?DBG({EvoName, TableName, running}),
+    ?DBG({EvoName, TableName, starting}),
 
-    Templates = [{list, List}, {view, View}, {edit, Edit}],
+    Table = ?GV(table, Conf),
+
+    Templates = case ?GVD(templates, Conf, none) of
+                    none -> [{list, auto}, {view, auto}, {edit, auto}];
+                    Given -> [{list, ?GVD(list, Given, auto)},
+                              {view, ?GVD(view, Given, auto)},
+                              {edit, ?GVD(edit, Given, auto)}]
+                end,
 
     Callback = fun(Name) -> 
                        case proplists:get_value(Name, Templates, not_found) of
@@ -72,23 +72,17 @@ init([EvoName, TableName, [Table, ListCols, {List, View, Edit}]]) ->
                        end
                end,
 
+    Immutable = ?GVD(immutable, Conf, [id]),
+
     gen_server:cast(self(), reload_columns),
 
     {ok, #state{evoname=EvoName,
                 compname=TableName,
+                conf=Conf,
                 table=Table,
-                listCols=ListCols,
+                immutable=Immutable,
                 templateCallback=Callback}}.
 
-%%--------------------------------------------------------------------
-%% Function: %% handle_call(Request, From, State) -> {reply, Reply, State} |
-%%                                      {reply, Reply, State, Timeout} |
-%%                                      {noreply, State} |
-%%                                      {noreply, State, Timeout} |
-%%                                      {stop, Reason, Reply, State} |
-%%                                      {stop, Reason, State}
-%% Description: Handling call messages
-%%--------------------------------------------------------------------
 
 handle_call({respond, Req, 'GET', []}, _From, State) ->
     Link = evosite:link(State#state.evoname, State#state.compname, ["list", "1"]),
@@ -145,63 +139,63 @@ handle_call({respond, Req, 'GET', ["view", RowID]}, _From, State) ->
 handle_call({respond, Req, 'GET', ["edit", RowID]}, _From, State) ->
     {reply, row_page(State, Req, RowID, edit), State};
 
-handle_call({respond, Req, 'POST', ["edit", RowID]}, _From, State) ->
+handle_call({respond, Req, 'POST', ["edit", StrRowID]}, _From, State) ->
 
+    RowID = list_to_integer(StrRowID),
     OutValues = mochiweb_multipart:parse_form(Req),
-    ?DBG({out_values, OutValues}),
 
-    evoform:parse_form(State#state.editForm, OutValues),
+    InValues = evoform:parse_form(State#state.editForm, OutValues),
 
-    Link = evosite:link(State#state.evoname, State#state.compname, ["view", RowID]),
-    {reply, {response, Req:respond({302, [{<<"Location">>, Link}], <<"">>})}, State};
+    ?DB({update, [{table, State#state.table},
+                  {values, InValues},
+                  {where, [{id, <<"=">>, RowID}]}]}),
+
+    Link = evosite:link(State#state.evoname, State#state.compname, ["view", StrRowID]),
+    Reply = {response, Req:respond({302, [{<<"Location">>, Link}], <<"">>})},
+    {reply, Reply, State};
 
 handle_call(_Request, _From, State) ->
     {reply, not_found, State}.
 
-%%--------------------------------------------------------------------
-%% Function: handle_cast(Msg, State) -> {noreply, State} |
-%%                                      {noreply, State, Timeout} |
-%%                                      {stop, Reason, State}
-%% Description: Handling cast messages
-%%--------------------------------------------------------------------
+
+
 handle_cast(reload_columns, State) ->
     Table = State#state.table,
     ?DBG({reloading_columns, Table}),
     Columns = ?DB({getColumns, Table}),
 
-    Form = evoform:form_from_colspec(Columns),
+    ListCols = case ?GVD(listCols, State#state.conf, auto) of
+                   auto -> [list_to_atom(N) || {N, T} <- Columns];
+                   Given -> Given
+               end,
+
+    MutableColumns = [X || {C, T}=X <- Columns,
+                           not lists:member(list_to_atom(C), 
+                                            State#state.immutable)],
+
+    Form = evoform:form_from_colspec(MutableColumns),
 
     {noreply, State#state{columns=Columns,
-                          editForm=Form}};
+                          editForm=Form#evoform{domain=Table},
+                          listCols=ListCols}};
 
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
-%%--------------------------------------------------------------------
-%% Function: handle_info(Info, State) -> {noreply, State} |
-%%                                       {noreply, State, Timeout} |
-%%                                       {stop, Reason, State}
-%% Description: Handling all non call/cast messages
-%%--------------------------------------------------------------------
+
+
 handle_info(_Info, State) ->
     {noreply, State}.
 
-%%--------------------------------------------------------------------
-%% Function: terminate(Reason, State) -> void()
-%% Description: This function is called by a gen_server when it is about to
-%% terminate. It should be the opposite of Module:init/1 and do any necessary
-%% cleaning up. When it returns, the gen_server terminates with Reason.
-%% The return value is ignored.
-%%--------------------------------------------------------------------
+
 terminate(_Reason, _State) ->
     ok.
 
-%%--------------------------------------------------------------------
-%% Func: code_change(OldVsn, State, Extra) -> {ok, NewState}
-%% Description: Convert process state when code is changed
-%%--------------------------------------------------------------------
+
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
+
+
 
 %%--------------------------------------------------------------------
 %%% Internal functions
@@ -210,18 +204,26 @@ code_change(_OldVsn, State, _Extra) ->
 row_page(State, Req, RowID, Action) ->
     Table = State#state.table,
     Columns = State#state.columns,
+    Immutable = State#state.immutable,
     ColNames = lists:map(fun({K,_V}) -> K end, Columns),
 
     ID = list_to_integer(RowID),
 
     [Row] = ?DB({rowByID, Table, ID}),
 
+    ValueRenderer = fun({Col,_}=X) ->
+                            case lists:member(Col, Immutable) of
+                                true -> cell_value(view, X);
+                                false -> cell_value(Action, X)
+                            end
+                    end,
+
     Data = [{columns, ColNames}, 
             {row, Row}, {id, ID},
             {action, Action}],
 
     Conf = [{table, Table}, {row, Row},
-            {db_value, fun(X) -> cell_value(Action, X) end},
+            {db_value, ValueRenderer},
             {state, State}],
 
     case ?Template(run_raw, {reload, view}, Data, Conf) of
