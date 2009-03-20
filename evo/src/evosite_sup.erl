@@ -9,7 +9,7 @@
 
 -behaviour(supervisor).
 
--include("evoconv.hrl").
+-include("evo.hrl").
 
 %% API
 -export([start_link/1]).

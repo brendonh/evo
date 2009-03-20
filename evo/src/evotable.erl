@@ -9,8 +9,7 @@
 
 -behaviour(gen_server).
 
--include("evoform.hrl").
--include("evoconv.hrl").
+-include("evo.hrl").
 
 %% API
 -export([start_link/3]).
@@ -176,7 +175,7 @@ handle_cast(reload_columns, State) ->
     Form = evoform:form_from_colspec(MutableColumns),
 
     {noreply, State#state{columns=Columns,
-                          editForm=Form#evoform{domain=Table},
+                          editForm=Form#form{domain=Table},
                           listCols=ListCols}};
 
 handle_cast(_Msg, State) ->

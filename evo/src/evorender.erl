@@ -1,13 +1,12 @@
 -module(evorender).
 
 -include("evo.hrl").
--include("evoconv.hrl").
 
 -export([data/1, foreach/1, foreach/2, items/1, ifdata/1, get_data/1, format/2]).
 
 data(State) ->
     Data = get_data(State),
-    State#state{children=[format(State, Data)|State#state.children],
+    State#templateState{children=[format(State, Data)|State#templateState.children],
                 render=none}.
 
 foreach(State) ->
@@ -19,42 +18,42 @@ foreach(State, NameStr) ->
                          fun(Data, {Row, Acc}) ->
                                  ID = evo:new_id(),
                                  evo:put_cache(ID, Data),
-                                 NewState = #state{id=ID,
+                                 NewState = #templateState{id=ID,
                                                    tag={e,inv},
                                                    row=Row,
-                                                   level=State#state.level+1,
-                                                   children=State#state.children},
+                                                   level=State#templateState.level+1,
+                                                   children=State#templateState.children},
                                  Final = set_parent(NewState, State),
 
                                  case Name of
                                      none -> ok;
-                                     Name -> evo:put_var_cache(Final#state.id, Name, Data)
+                                     Name -> evo:put_var_cache(Final#templateState.id, Name, Data)
                                  end,
 
                                  {Row+1, [Final|Acc]}
                          end,
                          {0, []}, get_data(State)),
-    State#state{render=none, children=NewChildren}.
+    State#templateState{render=none, children=NewChildren}.
 
 items(State) ->
     Data = get_data(State),
     NewData = lists:map(fun({K,V}) -> [{key, K}, {value, V}] end, Data),
-    evo:put_cache(State#state.id, NewData),
+    evo:put_cache(State#templateState.id, NewData),
     foreach(State).
 
 
 ifdata(State) ->
     case get_data(State) of
         true -> 
-            evo:put_cache(State#state.id, undefined),
-            State#state{dataExpression=none};
+            evo:put_cache(State#templateState.id, undefined),
+            State#templateState{dataExpression=none};
         false -> 
-            State#state{children=[]}
+            State#templateState{children=[]}
     end.
 
-get_data(#state{id=ID, dataExpression=none, parent=none}) ->
+get_data(#templateState{id=ID, dataExpression=none, parent=none}) ->
     evo:get_cache(ID);
-get_data(#state{id=ID, dataExpression=none, parent=Parent}) ->
+get_data(#templateState{id=ID, dataExpression=none, parent=Parent}) ->
     case evo:get_cache(ID) of
         undefined -> 
             Data = get_data(Parent),
@@ -63,7 +62,7 @@ get_data(#state{id=ID, dataExpression=none, parent=Parent}) ->
         Data -> 
             Data
     end;
-get_data(#state{id=ID, dataExpression=DataExp, parent=Parent}=State) ->
+get_data(#templateState{id=ID, dataExpression=DataExp, parent=Parent}=State) ->
     case evo:get_cache(ID) of
         undefined ->
             ParentData = get_data(Parent),
@@ -74,8 +73,8 @@ get_data(#state{id=ID, dataExpression=DataExp, parent=Parent}=State) ->
             Data
     end.
 
-format(#state{formatFunc=none}, Data) -> Data;
-format(#state{formatFunc={Key, Args}}=State, Data) ->
+format(#templateState{formatFunc=none}, Data) -> Data;
+format(#templateState{formatFunc={Key, Args}}=State, Data) ->
     Func = proplists:get_value(Key, get(evoconf)),
     case Func of
         undefined -> "Missing format function: " ++ Key;
@@ -86,9 +85,9 @@ format(#state{formatFunc={Key, Args}}=State, Data) ->
             Result
     end.
 
-get_row(#state{row=none, parent=none}) -> none;
-get_row(#state{row=none, parent=Parent}) -> get_row(Parent);
-get_row(#state{row=Row}) -> Row.
+get_row(#templateState{row=none, parent=none}) -> none;
+get_row(#templateState{row=none, parent=Parent}) -> get_row(Parent);
+get_row(#templateState{row=Row}) -> Row.
 
 
 eval(String, OldData, Row) ->
@@ -114,6 +113,6 @@ set_parent(Text, _) when is_list(Text) -> Text;
 set_parent(State, Parent) ->
     ID = evo:new_id(),
     NewChildren = lists:map(fun(C) -> set_parent(C, State) end,
-                            State#state.children),       
-    evo:put_cache(ID, evo:get_cache(State#state.id)),
-    State#state{id=ID, parent=Parent, children=NewChildren}.
+                            State#templateState.children),       
+    evo:put_cache(ID, evo:get_cache(State#templateState.id)),
+    State#templateState{id=ID, parent=Parent, children=NewChildren}.

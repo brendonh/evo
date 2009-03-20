@@ -1,6 +1,6 @@
 -module(evopgsql).
 
--include("evoconv.hrl").
+-include("evo.hrl").
 
 -export([start/0, start/1, request/1, template/1]).
 

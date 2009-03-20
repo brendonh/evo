@@ -9,7 +9,7 @@
 
 -behaviour(gen_server).
 
--include("evoconv.hrl").
+-include("evo.hrl").
 
 %% API
 -export([start_link/2, db/2, template/2, link/3]).

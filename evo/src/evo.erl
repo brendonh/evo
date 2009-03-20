@@ -7,8 +7,7 @@
          tag/3, escape_entities/1]).
 
 -include("evo.hrl").
--include("evoconv.hrl").
-
+ 
 -define(MAX_LINE, 80).
 
 run_file(Filename, InitialData) ->
@@ -65,7 +64,7 @@ prepare(Content) ->
     put(newID, 1),
     Self = self(),
     spawn_link(fun() -> evoxml:parse(Content, Self) end),
-    FinalState = watch_parsing(#state{id=0}),
+    FinalState = watch_parsing(#templateState{id=0}),
     ets:insert(get(finalCache), ets:tab2list(get(dataCache))),
     accept_runs(FinalState).
 
@@ -160,22 +159,22 @@ watch_parsing(State) ->
     receive
 
         {tag_start, Name} ->
-            NewState = #state{id=new_id(),
+            NewState = #templateState{id=new_id(),
                               tag=Name,
-                              level=State#state.level+1, 
+                              level=State#templateState.level+1, 
                               parent=State},
             watch_parsing(NewState);
 
         {attr, {{e, dataExp}, Value}} ->
-            watch_parsing(State#state{dataExpression=Value});
+            watch_parsing(State#templateState{dataExpression=Value});
 
         {attr, {{e, data}, Value}} ->
-            put_cache(State#state.id, Value),
+            put_cache(State#templateState.id, Value),
             watch_parsing(State);
 
         {attr, {{e, format}, Key}} ->
             [Func|Args] = string:tokens(Key, " "),
-            watch_parsing(State#state{formatFunc={list_to_atom(Func), Args}});
+            watch_parsing(State#templateState{formatFunc={list_to_atom(Func), Args}});
 
         {attr, {{e, key}, CompoundKey}} ->
             Exp = lists:flatten(
@@ -184,26 +183,30 @@ watch_parsing(State) ->
                               io_lib:format("proplists:get_value(~s, ~s)", [E, A]) 
                       end, ["D"], 
                       string:tokens(CompoundKey, "."))),
-            watch_parsing(State#state{dataExpression=Exp});
+            watch_parsing(State#templateState{dataExpression=Exp});
 
         {attr, {{e, render}, Value}} ->
-            watch_parsing(State#state{render=Value});
+            watch_parsing(State#templateState{render=Value});
 
         {attr, {{e, Attr}, _}} ->
             erlang:error({"Unknown evo attribute", Attr});
 
         {attr, {NSAttr, Value}} ->
-            watch_parsing(State#state{attrs=[{NSAttr, Value}|State#state.attrs]});
+            watch_parsing(State#templateState{
+                            attrs=[{NSAttr, Value}|State#templateState.attrs]});
 
         {text, Text} ->
-            watch_parsing(State#state{children=[Text|State#state.children]});
+            watch_parsing(State#templateState{
+                            children=[Text|State#templateState.children]});
 
         {unhandled_tag, {Tag}} ->
-            watch_parsing(State#state{children=[Tag|State#state.children]});
+            watch_parsing(State#templateState{
+                            children=[Tag|State#templateState.children]});
 
         {tag_end, _} ->
-            Parent = State#state.parent,
-            watch_parsing(Parent#state{children=[State|Parent#state.children]});
+            Parent = State#templateState.parent,
+            watch_parsing(Parent#templateState{
+                            children=[State|Parent#templateState.children]});
 
         done ->
             State
@@ -222,22 +225,24 @@ emitTag(Int) when is_integer(Int) ->
 emitTag(Atom) when is_atom(Atom) ->
     {atom_to_list(Atom), none};
 
-emitTag(#state{tag={e,attr}}=State) ->
+emitTag(#templateState{tag={e,attr}}=State) ->
     NewState = applyRender(State),
-    Name = list_to_atom(proplists:get_value({none, name}, NewState#state.attrs)),
+    Name = list_to_atom(proplists:get_value({none, name}, 
+                                            NewState#templateState.attrs)),
     Value = lists:reverse(emitChildren(NewState)),
-    Parent = NewState#state.parent,
-    ParentAttrs2 = proplists:delete({none, Name}, Parent#state.attrs),
-    NewParent = Parent#state{attrs=[{{none, Name}, Value}|ParentAttrs2]},
-    {"", NewState#state{parent=NewParent}};
+    Parent = NewState#templateState.parent,
+    ParentAttrs2 = proplists:delete({none, Name}, 
+                                    Parent#templateState.attrs),
+    NewParent = Parent#templateState{attrs=[{{none, Name}, Value}|ParentAttrs2]},
+    {"", NewState#templateState{parent=NewParent}};
 
-emitTag(#state{tag={e,inv}}=State) ->
+emitTag(#templateState{tag={e,inv}}=State) ->
     NewState = applyRender(State),
     {lists:reverse(emitChildren(NewState)), none};
 
-emitTag(#state{tag={e,slot}}=State) ->
+emitTag(#templateState{tag={e,slot}}=State) ->
     Data = evorender:get_data(State),
-    CompoundKey = proplists:get_value({none, key}, State#state.attrs),
+    CompoundKey = proplists:get_value({none, key}, State#templateState.attrs),
     Final = case CompoundKey of
         undefined ->
             Data;
@@ -248,19 +253,19 @@ emitTag(#state{tag={e,slot}}=State) ->
     end,
     emitTag(evorender:format(State, Final));
 
-emitTag(#state{tag={e,key}}=State) ->
+emitTag(#templateState{tag={e,key}}=State) ->
     emitTag(evorender:format(State, proplists:get_value(key, evorender:get_data(State))));
 
-emitTag(#state{tag={e,value}}=State) ->
+emitTag(#templateState{tag={e,value}}=State) ->
     emitTag(evorender:format(State, proplists:get_value(value, evorender:get_data(State))));
 
-emitTag(#state{tag={e,Tag}}) ->
+emitTag(#templateState{tag={e,Tag}}) ->
     erlang:error({"Unknown evo tag", Tag});
 
-emitTag(#state{render=none}=State) ->
+emitTag(#templateState{render=none}=State) ->
     {renderTag(State), State};
 
-emitTag(#state{}=State) ->
+emitTag(#templateState{}=State) ->
     NewState = applyRender(State),
     emitTag(NewState);
 
@@ -279,14 +284,15 @@ emitChildren(State, true) ->
     lists:foldl(
       fun(S, {Parent, Children}) ->
               case S of
-                  #state{} ->
-                      NS = S#state{parent=Parent},
+                  #templateState{} ->
+                      NS = S#templateState{parent=Parent},
                       {Child, NS2} = emitTag(NS),
                       case NS2 of
                           none ->
                               {Parent, maybe_append(Child, Children)};
                           _ ->
-                              {NS2#state.parent, maybe_append(Child, Children)}
+                              {NS2#templateState.parent, 
+                               maybe_append(Child, Children)}
                       end;
                   _ ->
                       {Child, _} = emitTag(S),
@@ -294,7 +300,7 @@ emitChildren(State, true) ->
               end
       end,
       {State, []},
-      lists:reverse(State#state.children)).
+      lists:reverse(State#templateState.children)).
 
 
 maybe_append("", Children) -> Children;
@@ -309,10 +315,10 @@ renderTag(State) ->
         _ -> emitFullTag(NewState, Children)
     end.
 
-applyRender(#state{render=none}=State) ->
+applyRender(#templateState{render=none}=State) ->
     State;
 applyRender(State) ->
-    [FuncName|Args] = string:tokens(State#state.render, " "),
+    [FuncName|Args] = string:tokens(State#templateState.render, " "),
     Render = list_to_atom(FuncName),
     apply(evorender, Render, [State|Args]).
 
@@ -322,15 +328,16 @@ emitFullTag(State, Children) ->
      closeTag(State)}.
 
 emitEmptyTag(State) ->
-    [lists:flatten([$<, flatten_name(State#state.tag), 
-                    flatten_attrs(State#state.attrs),
+    [lists:flatten([$<, flatten_name(State#templateState.tag), 
+                    flatten_attrs(State#templateState.attrs),
                     " />"])].
 
 openTag(State) ->
-    [$<, flatten_name(State#state.tag), flatten_attrs(State#state.attrs), $>].
+    [$<, flatten_name(State#templateState.tag), 
+     flatten_attrs(State#templateState.attrs), $>].
 
 closeTag(State) ->
-    [$<, $/, flatten_name(State#state.tag), $>].
+    [$<, $/, flatten_name(State#templateState.tag), $>].
 
 flatten_attrs([]) -> "";
 flatten_attrs(Attrs) ->
@@ -438,7 +445,8 @@ join_text(Bits) ->
     {Text, AllText} = lists:foldl(fun maybe_join/2, {[], true}, Bits),
     {lists:reverse(Text), AllText}.
 
-maybe_join([C1|_]=Text, {[[C2|_]=Last|Rest], All}) when is_integer(C1), is_integer(C2) ->
+maybe_join([C1|_]=Text, {[[C2|_]=Last|Rest], All}) 
+  when is_integer(C1), is_integer(C2) ->
     {[lists:concat([Last, Text])|Rest], All};
 maybe_join([C1|_]=Text, {[], All}) when is_integer(C1) ->
     {[Text], All};
@@ -476,14 +484,14 @@ var(Name) ->
 
 put_var(Name, Value) ->
     State = get(formatState),
-    put_var_cache(State#state.id, Name, Value).
+    put_var_cache(State#templateState.id, Name, Value).
 
 get_state_var(none, _Name) ->
     undefined;
 get_state_var(State, Name) ->
-    ID = State#state.id,
+    ID = State#templateState.id,
     case get_var_cache(ID, Name) of
-        undefined -> get_state_var(State#state.parent, Name);
+        undefined -> get_state_var(State#templateState.parent, Name);
         Value -> Value
     end.
 
