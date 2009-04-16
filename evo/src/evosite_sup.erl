@@ -24,13 +24,10 @@
 %%====================================================================
 %% API functions
 %%====================================================================
-%%--------------------------------------------------------------------
-%% Function: start_link() -> {ok,Pid} | ignore | {error,Error}
-%% Description: Starts the supervisor
-%%--------------------------------------------------------------------
 start_link(SiteSpec) ->
     SupName = ?CONFNAME(SiteSpec, "sup"),
     supervisor:start_link({local, SupName}, ?MODULE, [SiteSpec]).
+
 
 %%====================================================================
 %% Supervisor callbacks
@@ -80,11 +77,6 @@ start(magicdb, Conf) ->
             []              
     end;
 
-%start(evosite, Conf) ->
-    %[{EvoName, {evosite, start_link, [EvoName, SiteConf]}, %% XXX TODO
-%    [{?SITENAME(Conf), {evosite, 
-%      permanent,2000,worker,[evosite]}];
-
 start(evotemplate, Conf) ->
     TemplateServerName = ?CONFNAME(Conf, "evotemplate"),
     [{TemplateServerName, 
@@ -111,6 +103,3 @@ init_component(_Path, module, {_Mod, _InitArgs}, _Conf) ->  [].
 
 make_loop(Conf) ->
     fun(Req) -> evosite:respond(Req, Conf) end.
-            
-
-    %fun(Req) -> gen_server:call(EvoName, {respond, Req}, infinity) end.

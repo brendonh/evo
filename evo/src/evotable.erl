@@ -18,9 +18,6 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
 
-%MagicName = evoutil:concat_atoms([EvoName, "_magicdb"]),
-%    gen_server:call(MagicName, Args).
-%-define(DB(Args), evosite:db(State#state.evoname, Args)).
 
 -define(DB(Args), gen_server:call(?CONFNAME(State#state.conf, "magicdb"), Args)).
 
@@ -55,7 +52,6 @@
 %% API
 %%====================================================================
 start_link(SiteConf, Name, TableConf) ->
-    %CompName = evoutil:concat_atoms([EvoName, "_component_", Name]),
     CompName = ?COMPONENT(SiteConf, Name),
     gen_server:start_link({local, CompName}, ?MODULE, [SiteConf, Name, TableConf], []).
 
