@@ -18,14 +18,26 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
 
--define(DB(Args), evosite:db(State#state.evoname, Args)).
--define(Template(C, T, D, Cf), evosite:template(State#state.evoname, {C,T,D,Cf,State#state.templateCallback})).
+%MagicName = evoutil:concat_atoms([EvoName, "_magicdb"]),
+%    gen_server:call(MagicName, Args).
+%-define(DB(Args), evosite:db(State#state.evoname, Args)).
+
+-define(DB(Args), gen_server:call(?CONFNAME(State#state.conf, "magicdb"), Args)).
+
+-define(Template(C, T, D, Cf), 
+        gen_server:call(?CONFNAME(State#state.conf, "evotemplate"),
+                        {C,T,D,Cf,State#state.templateCallback})).
+
+-define(SelfLink(Path), ?LINK(State#state.conf, 
+                              atom_to_list(State#state.table), 
+                              Path)).
 
 -record(state, {
 
  evoname,
  compname,
  conf,
+ tableConf,
 
  table,
  listCols,
@@ -42,22 +54,23 @@
 %%====================================================================
 %% API
 %%====================================================================
-start_link(EvoName, Name, Conf) ->
-    CompName = evoutil:concat_atoms([EvoName, "_component_", Name]),
-    gen_server:start_link({local, CompName}, ?MODULE, [EvoName, Name, Conf], []).
+start_link(SiteConf, Name, TableConf) ->
+    %CompName = evoutil:concat_atoms([EvoName, "_component_", Name]),
+    CompName = ?COMPONENT(SiteConf, Name),
+    gen_server:start_link({local, CompName}, ?MODULE, [SiteConf, Name, TableConf], []).
 
 
 %%====================================================================
 %% gen_server callbacks
 %%====================================================================
 
-init([EvoName, TableName, Conf]) ->
+init([SiteConf, Name, TableConf]) ->
     
-    ?DBG({EvoName, TableName, starting}),
+    ?DBG({?MODULE, ?COMPONENT(SiteConf, Name), starting}),
 
-    Table = ?GV(table, Conf),
+    Table = ?GV(table, TableConf),
 
-    Templates = case ?GVD(templates, Conf, none) of
+    Templates = case ?GVD(templates, TableConf, none) of
                     none -> [{list, auto}, {view, auto}, {edit, auto}];
                     Given -> [{list, ?GVD(list, Given, auto)},
                               {view, ?GVD(view, Given, auto)},
@@ -71,25 +84,26 @@ init([EvoName, TableName, Conf]) ->
                        end
                end,
 
-    Immutable = ?GVD(immutable, Conf, [id]),
+    Immutable = ?GVD(immutable, TableConf, [id]),
 
     gen_server:cast(self(), reload_columns),
 
-    {ok, #state{evoname=EvoName,
-                compname=TableName,
-                conf=Conf,
+    {ok, #state{evoname=?COMPONENT(SiteConf, Name),
+                compname=Name,
+                conf=SiteConf,
+                tableConf=TableConf,
                 table=Table,
                 immutable=Immutable,
                 templateCallback=Callback}}.
 
 
 handle_call({respond, Req, 'GET', []}, _From, State) ->
-    Link = evosite:link(State#state.evoname, State#state.compname, ["list", "1"]),
+    Link = ?SelfLink(["list", "1"]),
     Response = Req:respond({302, [{<<"Location">>, Link}], <<"">>}),
     {reply, {response, Response}, State};
 
 handle_call({respond, Req, 'GET', ["list"]}, _From, State) ->
-    Link = evosite:link(State#state.evoname, State#state.compname, ["list", "1"]),
+    Link = ?SelfLink(["list", "1"]),
     Response = Req:respond({302, [{<<"Location">>, Link}], <<"">>}),
     {reply, {response, Response}, State};
 
@@ -149,7 +163,7 @@ handle_call({respond, Req, 'POST', ["edit", StrRowID]}, _From, State) ->
                   {values, InValues},
                   {where, [{id, <<"=">>, RowID}]}]}),
 
-    Link = evosite:link(State#state.evoname, State#state.compname, ["view", StrRowID]),
+    Link = ?SelfLink(["view", StrRowID]),
     Reply = {response, Req:respond({302, [{<<"Location">>, Link}], <<"">>})},
     {reply, Reply, State};
 
@@ -163,7 +177,7 @@ handle_cast(reload_columns, State) ->
     ?DBG({reloading_columns, Table}),
     Columns = ?DB({getColumns, Table}),
 
-    ListCols = case ?GVD(listCols, State#state.conf, auto) of
+    ListCols = case ?GVD(listCols, State#state.tableConf, auto) of
                    auto -> [list_to_atom(N) || {N, T} <- Columns];
                    Given -> Given
                end,
@@ -263,11 +277,8 @@ link_view(Val) ->
     ID = proplists:get_value(id, Row),
 
     State = evo:conf(state),
-    EvoName = State#state.evoname,
-    CompName = State#state.compname,
 
-    Link = evosite:link(EvoName, CompName, ["view", integer_to_list(ID)]),
-
+    Link = ?SelfLink(["view", integer_to_list(ID)]),
     evo:tag(a, [{href, Link}], format_db_value(Val)).
 
 
@@ -301,10 +312,9 @@ format_db_value(Val) ->
 
 page_link(_Data, Offset, Label) ->
     State = evo:conf(state),
-    EvoName = State#state.evoname,
-    CompName = State#state.compname,
     Page = evo:conf(page) + list_to_integer(Offset),
-    Link = evosite:link(EvoName, CompName, ["list", integer_to_list(Page)]),
+
+    Link = ?SelfLink(["list", integer_to_list(Page)]),
 
     case Page of
         I when I < 1 ->

@@ -7,6 +7,8 @@
 %%%-------------------------------------------------------------------
 -module(evo_sup).
 
+-include("evo.hrl").
+
 -behaviour(supervisor).
 
 %% API
@@ -30,15 +32,6 @@ start_link() ->
 %%====================================================================
 %% Supervisor callbacks
 %%====================================================================
-%%--------------------------------------------------------------------
-%% Func: init(Args) -> {ok,  {SupFlags,  [ChildSpec]}} |
-%%                     ignore                          |
-%%                     {error, Reason}
-%% Description: Whenever a supervisor is started using 
-%% supervisor:start_link/[2,3], this function is called by the new process 
-%% to find out about restart strategy, maximum restart frequency and child 
-%% specifications.
-%%--------------------------------------------------------------------
 init([]) ->
 
     Specs = case application:get_env(evo, sites) of
@@ -47,17 +40,16 @@ init([]) ->
                     lists:map(fun spec_from_site/1, Sites)
             end,
 
-    {ok,{{one_for_one,1,10}, Specs}}.
+    {ok,{{one_for_one,0,10}, Specs}}.
 
 %%====================================================================
 %% Internal functions
 %%====================================================================
 
-start_site(Site) ->
-    supervisor:start_child(?MODULE, spec_from_site(Site)).
+start_site(Conf) ->
+    supervisor:start_child(?MODULE, spec_from_site(Conf)).
 
-
-spec_from_site({SiteName, _Conf}=Site) ->
-    {evoutil:concat_atoms([SiteName, "_sup"]),
-     {evosite_sup, start_link, [Site]},
-     permanent,2000,worker,[evosite_sup]}.
+spec_from_site(Conf) ->
+    {?CONFNAME(Conf, "sup"),
+     {evosite_sup, start_link, [Conf]},
+     permanent,2000,supervisor,[evosite_sup]}.

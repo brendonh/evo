@@ -28,58 +28,49 @@
 %% Function: start_link() -> {ok,Pid} | ignore | {error,Error}
 %% Description: Starts the supervisor
 %%--------------------------------------------------------------------
-start_link({SiteName, _Conf}=SiteSpec) ->
-    SupName = evoutil:concat_atoms(["evosite_", SiteName, "_sup"]),
+start_link(SiteSpec) ->
+    SupName = ?CONFNAME(SiteSpec, "sup"),
     supervisor:start_link({local, SupName}, ?MODULE, [SiteSpec]).
 
 %%====================================================================
 %% Supervisor callbacks
 %%====================================================================
-%%--------------------------------------------------------------------
-%% Func: init(Args) -> {ok,  {SupFlags,  [ChildSpec]}} |
-%%                     ignore                          |
-%%                     {error, Reason}
-%% Description: Whenever a supervisor is started using 
-%% supervisor:start_link/[2,3], this function is called by the new process 
-%% to find out about restart strategy, maximum restart frequency and child 
-%% specifications.
-%%--------------------------------------------------------------------
-init([{SiteName, SiteConf}]) ->
+init([Conf]) ->
 
-    EvoName = evoutil:concat_atoms(["evosite_", SiteName]),
-
-    ets:new(evoutil:concat_atoms([EvoName, "_componentPaths"]), [public, bag, named_table]),
+    ets:new(?CONFNAME(Conf, "componentPaths"), [public, bag, named_table]),
 
     Bits = lists:concat(
              lists:map(
-               fun (B) -> start(B, EvoName, SiteConf) end,
-               [mochiweb, cometd, magicdb, evosite, evotemplate, components])),
+               fun (B) -> start(B, Conf) end,
+               [mochiweb, cometd, magicdb, evotemplate, components])),
 
-    {ok,{{one_for_one,10,60}, Bits}}.
+    {ok,{{one_for_one,0,60}, Bits}}.
+
 
 %%====================================================================
 %% Internal functions
 %%====================================================================
 
-start(mochiweb, EvoName, SiteConf) ->
-    MochiName = evoutil:concat_atoms([EvoName, "_mochiweb"]),
+start(mochiweb, Conf) ->
+    MochiName = ?CONFNAME(Conf, "mochiweb"),
+    Port = ?GVD(port, Conf, ?DEFAULT_PORT),
     [{MochiName, {mochiweb_http, start,
                   [[{name, MochiName},
-                    {port, proplists:get_value(port, SiteConf, ?DEFAULT_PORT)}, 
-                    {loop, make_loop(EvoName)}]]},
+                    {port, Port}, 
+                    {loop, make_loop(Conf)}]]},
       permanent,2000,worker,[mochiweb_socket_server]}];
 
-start(cometd, EvoName, _SiteConf) ->
+start(cometd, Conf) ->
     application:load(cometd),
-    CometdName = evoutil:concat_atoms([EvoName, "_cometd"]),
+    CometdName = ?CONFNAME(Conf, "cometd"),
     [{CometdName, {cometd_sup, start_link, []},
       permanent, 2000, supervisor, [cometd_sup]}];
 
-start(magicdb, EvoName, SiteConf) ->
-    case proplists:get_value(dbinfo, SiteConf) of
+start(magicdb, Conf) ->
+    case proplists:get_value(dbinfo, Conf) of
         {DB, User, Pass} ->
             DSN = lists:flatten(io_lib:format("DSN=~s;UID=~s;PWD=~s", [DB, User, Pass])),
-            MagicName = evoutil:concat_atoms([EvoName, "_magicdb"]),
+            MagicName = ?CONFNAME(Conf, "magicdb"),
             [{MagicName, {magicdb, start_link, [{dsn, DSN}, {local, MagicName}]},
               permanent,2000,worker,[magicdb]}];
         undefined ->
@@ -89,33 +80,37 @@ start(magicdb, EvoName, SiteConf) ->
             []              
     end;
 
-start(evosite, EvoName, SiteConf) ->
-    [{EvoName, {evosite, start_link, [EvoName, SiteConf]},
-      permanent,2000,worker,[evosite]}];
+%start(evosite, Conf) ->
+    %[{EvoName, {evosite, start_link, [EvoName, SiteConf]}, %% XXX TODO
+%    [{?SITENAME(Conf), {evosite, 
+%      permanent,2000,worker,[evosite]}];
 
-start(evotemplate, EvoName, _SiteConf) ->
-    TemplateServerName = evoutil:concat_atoms([EvoName, "_evotemplate"]),
+start(evotemplate, Conf) ->
+    TemplateServerName = ?CONFNAME(Conf, "evotemplate"),
     [{TemplateServerName, 
       {evotemplate, start_link, [TemplateServerName]},
       permanent,5000,worker,[evotemplate]}];
 
-start(components, EvoName, SiteConf) ->
+start(components, Conf) ->
     lists:concat(
       lists:map(
-        fun({Path, Type, Args}) -> init_component(Path, EvoName, Type, Args) end,
-        proplists:get_value(components, SiteConf, []))).
+        fun({Path, {Type, Args}}) -> init_component(Path, Type, Args, Conf) end,
+        proplists:get_value(components, Conf, []))).
 
-init_component(Path, EvoName, gen_server, {Mod, Name, InitArgs}) ->
-    CompName = evoutil:concat_atoms([EvoName, "_component_", Name]),
-    CompPathTable = evoutil:concat_atoms([EvoName, "_componentPaths"]),
+init_component(Path, gen_server, {Mod, Name, InitArgs}, Conf) ->
+    CompName = ?COMPONENT(Conf, Name),
+    CompPathTable = ?CONFNAME(Conf, "componentPaths"),
     ets:insert(CompPathTable, {CompName, Path}),
-    [{CompName, {Mod, start_link, [EvoName, Name, InitArgs]},
+    [{CompName, {Mod, start_link, [Conf, Name, InitArgs]},
       permanent,2000,worker,[Mod]}];
-init_component(Path, EvoName, gen_server, Name) -> 
-    CompPathTable = evoutil:concat_atoms([EvoName, "_componentPaths"]),
+init_component(Path, gen_server, Name, Conf) -> 
+    CompPathTable = ?CONFNAME(Conf, "componentPaths"),
     ets:insert(CompPathTable, {Name, Path}),
     [];
-init_component(_Path, _EvoName, module, {_Mod, _InitArgs}) ->  [].
+init_component(_Path, module, {_Mod, _InitArgs}, _Conf) ->  [].
 
-make_loop(EvoName) ->
-    fun(Req) -> gen_server:call(EvoName, {respond, Req}, infinity) end.
+make_loop(Conf) ->
+    fun(Req) -> evosite:respond(Req, Conf) end.
+            
+
+    %fun(Req) -> gen_server:call(EvoName, {respond, Req}, infinity) end.
