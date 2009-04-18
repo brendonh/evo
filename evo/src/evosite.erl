@@ -10,27 +10,17 @@
 -include("evo.hrl").
 
 %% API
--export([respond/2]).
+-export([respond/2, get_response/3]).
 
 respond(Req, Conf) ->
-    Path = string:tokens(Req:get(path), "/"),
-    get_response(Path, Req, Conf).
-
-
-%%--------------------------------------------------------------------
-%%% Internal functions
-%%--------------------------------------------------------------------
-
-get_callback(Conf, {module, {Mod, InitArgs}}) ->
-    Instance = apply(Mod, new, [?SITENAME(Conf)|InitArgs]),
-    fun(Req, Method, Args) -> Instance:respond(Req, Method, Args) end;
-get_callback(Conf, {gen_server, {_Mod, Name, _InitArgs}}) ->
-    get_callback(Conf, {gen_server, Name});
-get_callback(Conf, {gen_server, Name}) ->
-    fun(Req, Method, Args) -> 
-            gen_server:call(?COMPONENT(Conf, Name), 
-                            {respond, Req, Method, Args}) 
+    case run_always(?GVD(always, Conf, []), Req, Conf) of
+        {continue, Update} -> 
+            Args = string:tokens(Req:get(path), "/"),
+            Conf2 = Update ++ Conf,
+            get_response(Args, Req, Conf2);
+        Other -> Other
     end.
+
 
 get_response([], Req, Conf) ->
     get_response([""], Req, Conf);
@@ -39,24 +29,62 @@ get_response([Top|Rest], Req, Conf) ->
         none -> Req:not_found();
         CallbackConf -> 
             Callback = get_callback(Conf, CallbackConf),
-            run_responders(Callback, Rest, Req, Conf)
+            run_last_responder(Callback, Rest, Req, Conf)
     end.
 
-run_responders(Callback, Args, Req, Conf) ->
+
+
+%%--------------------------------------------------------------------
+%%% Internal functions
+%%--------------------------------------------------------------------
+
+run_always([], _Req, Conf) ->
+    {continue, Conf};
+run_always([Always|Rest], Req, Conf) ->
+    Callback = get_callback(Conf, Always),
+    Result = run_responder(Callback, [], Req, Conf),
+    case Result of
+        {update, NewConf} -> run_always(Rest, Req, NewConf);
+        Other -> Other
+    end.
+
+
+get_callback(Conf, {module, {Mod, InitArgs}}) ->
+    Instance = apply(Mod, new, InitArgs),
+    fun(Req, Method, Args) -> Instance:respond(Req, Method, Args, Conf) end;
+get_callback(Conf, {gen_server, {_Mod, Name, _InitArgs}}) ->
+    get_callback(Conf, {gen_server, Name});
+get_callback(Conf, {gen_server, Name}) ->
+    fun(Req, Method, Args) -> 
+            gen_server:call(?COMPONENT(Conf, Name), 
+                            {respond, Req, Method, Args}) 
+    end.
+
+
+run_last_responder(Callback, Args, Req, Conf) ->
+    case run_responder(Callback, Args, Req, Conf) of
+        {update, _} ->
+            display_error(Req, "Responder didn't return a body.", []);
+        Other -> Other
+    end.    
+
+
+run_responder(Callback, Args, Req, Conf) ->
     case catch Callback(Req, Req:get(method), Args) of
         {response, Response} -> 
             Response;
         {wrap, TemplateName, Data} ->
             wrap_template(TemplateName, Data, Req, Conf);
-                %State, Req, TemplateName, Data);
-        {child, NewCallback, NewArgs} -> 
-            run_responders(NewCallback, NewArgs, Req, Conf);
+        {child, NewCallback, NewArgs, NewConf} -> 
+            run_responder(NewCallback, NewArgs, Req, NewConf);
         {error, Error} ->
             display_error(Req, "Error: ~p~n", [Error]);
         {'EXIT', Error} ->
             display_error(Req, "Error: ~p~n", [Error]);
         not_found ->
             Req:not_found();
+        {update, NewConf} ->
+            {update, NewConf};
         Other ->
             display_error(Req, "Unknown component response: ~p~n", [Other])
     end.
@@ -89,9 +117,8 @@ run_wrap_template(Type, Template, Filename, Data, Req, Conf) ->
                end,
 
     case gen_server:call(?CONFNAME(Conf, "evotemplate"),
-                         {run, TemplateName, 
-                          Data, [], Callback}) of
-        {ok, Final} -> Req:ok({Type, Final});
+                         {run, TemplateName, Data, [], Callback}) of
+        {ok, Final} -> Req:ok({Type, ?GV(headers, Conf), Final});
         {error, Error} -> display_error(Req, "Template error: ~p~n", [Error]);
         Other -> display_error(Req, "Unknown template response: ~p~n", [Other])
     end.

@@ -21,6 +21,7 @@
 
 -define(DEFAULT_PORT, 80).
 
+
 %%====================================================================
 %% API functions
 %%====================================================================
@@ -33,8 +34,6 @@ start_link(SiteSpec) ->
 %% Supervisor callbacks
 %%====================================================================
 init([Conf]) ->
-
-    ets:new(?CONFNAME(Conf, "componentPaths"), [public, bag, named_table]),
 
     Bits = lists:concat(
              lists:map(
@@ -86,20 +85,22 @@ start(evotemplate, Conf) ->
 start(components, Conf) ->
     lists:concat(
       lists:map(
-        fun({Path, {Type, Args}}) -> init_component(Path, Type, Args, Conf) end,
-        proplists:get_value(components, Conf, []))).
+        fun({_Path, {Type, Args}}) -> init_component(Type, Args, Conf) end,
+        proplists:get_value(components, Conf, [])));
 
-init_component(Path, gen_server, {Mod, Name, InitArgs}, Conf) ->
+start(always, Conf) ->
+    lists:concat(
+      lists:map(
+        fun({Type, Args}) -> init_component(Type, Args, Conf) end,
+        proplists:get_value(alawys, Conf, []))).
+
+
+init_component(gen_server, {Mod, Name, InitArgs}, Conf) ->
     CompName = ?COMPONENT(Conf, Name),
-    CompPathTable = ?CONFNAME(Conf, "componentPaths"),
-    ets:insert(CompPathTable, {CompName, Path}),
     [{CompName, {Mod, start_link, [Conf, Name, InitArgs]},
       permanent,2000,worker,[Mod]}];
-init_component(Path, gen_server, Name, Conf) -> 
-    CompPathTable = ?CONFNAME(Conf, "componentPaths"),
-    ets:insert(CompPathTable, {Name, Path}),
-    [];
-init_component(_Path, module, {_Mod, _InitArgs}, _Conf) ->  [].
+init_component(gen_server, Name, Conf) -> [];
+init_component(module, {_Mod, _InitArgs}, _Conf) -> [].
 
 make_loop(Conf) ->
     fun(Req) -> evosite:respond(Req, Conf) end.

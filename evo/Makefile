@@ -7,6 +7,7 @@ INCLUDE_DIR = include
 MOCHIWEB_EBIN = ../mochiweb/ebin
 COMETD_EBIN = ../cometd/ebin
 MAGICDB_EBIN = ../RouteComplete/lib/magicdb/ebin
+COUCHDB_EBIN = ../../lib/erlang_couchdb/ebin
 
 SOURCES  = $(wildcard $(SRC_DIR)/*.erl)
 INCLUDES = $(wildcard $(INCLUDE_DIR)/*.hrl)
@@ -17,7 +18,7 @@ SHARED_EBIN = ../shared/$(EBIN_DIR)
 
 ERLC_INCLUDES = -I $(INCLUDE_DIR) -I $(SHARED_INCLUDE)
 ERL_EBINS = -pa $(EBIN_DIR) -pa $(SHARED_EBIN) \
-            -pa $(MOCHIWEB_EBIN) -pa $(COMETD_EBIN) -pa $(MAGICDB_EBIN)
+            -pa $(MOCHIWEB_EBIN) -pa $(COMETD_EBIN) -pa $(MAGICDB_EBIN) -pa $(COUCHDB_EBIN)
 
 ERLC = erlc
 ERLC_OPTS = $(ERLC_INCLUDES) -o $(EBIN_DIR) -Wall -v +debug_info
