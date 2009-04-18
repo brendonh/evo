@@ -43,13 +43,20 @@ items(State) ->
 
 
 ifdata(State) ->
-    case get_data(State) of
+    case bool(get_data(State)) of
         true -> 
             evo:put_cache(State#templateState.id, undefined),
-            State#templateState{dataExpression=none};
+            State#templateState{render=none, dataExpression=none};
         false -> 
-            State#templateState{children=[]}
+            State#templateState{render=none, children=[]}
     end.
+
+bool(false) -> false;
+bool(none) -> false;
+bool(undefined) -> false;
+bool([]) -> false;
+bool(_) -> true.
+     
 
 get_data(#templateState{id=ID, dataExpression=none, parent=none}) ->
     evo:get_cache(ID);

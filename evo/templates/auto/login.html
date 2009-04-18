@@ -1,6 +1,10 @@
 <form method="post" enctype="multipart/form-data">
 
 <table>
+  
+  <tr e:render="ifdata" e:key="error">
+    <td colspan="2" style="color: red"><e:slot key="error" /></td>
+  </tr>
 
   <tr>
     <td>Username: </td>

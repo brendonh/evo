@@ -7,9 +7,27 @@
 %%%-------------------------------------------------------------------
 -module(evosession, []).
 
--export([respond/4]).
+-export([respond/4, save_session/1, user_info/1]).
 
 -include("evo.hrl").
+
+
+%%%-------------------------------------------------------------------
+%%% API
+%%%-------------------------------------------------------------------
+
+user_info(Conf) ->
+    {_, Session} = ?GVD(session, Conf, []),
+    ?GVD(userInfo, Session, []).
+
+
+save_session(Conf) ->
+    {Key, RawSession} = ?GV(session, Conf),
+    Session = lists:usort([{K,V} || {K,V} <- RawSession, is_binary(K)]),
+    CouchDB = ?GV(couchdb, Conf),
+    erlang_couchdb:update_document(CouchDB, "evo", binary_to_list(Key), Session).
+
+
 
 
 %%%-------------------------------------------------------------------
@@ -26,37 +44,67 @@
 template(login) -> {file, "templates/auto/login.html"}.
 
 
-respond(_Req, 'GET', ["login"], Conf) ->
-    {ok, Content} = gen_server:call(?CONFNAME(Conf, "evotemplate"),
-                                    {run_raw, {reload, login}, [], [], fun template/1}),
-    {wrap, site, [{content, Content}, {title, "Login"}]};
+respond(Req, 'GET', ["login"], Conf) ->
+    case user_info(Conf) of
+        [] ->
+            {ok, Content} = gen_server:call(?CONFNAME(Conf, "evotemplate"),
+                                            {run_raw, {reload, login}, Conf, [], fun template/1}),
+            {wrap, site, [{content, Content}, {title, "Login"}]};
+        _ -> redirect(Req, Conf)
+    end;
 
 respond(Req, 'POST', ["login"], Conf) ->
+    case user_info(Conf) of
+        [] ->
+            CouchDB = ?GV(couchdb, Conf),
+            Creds = mochiweb_multipart:parse_form(Req),
+            Username = ?GV("username", Creds),
 
-    CouchDB = ?GV(couchdb, Conf),
-    Creds = mochiweb_multipart:parse_form(Req),
-    Username = ?GV("username", Creds),
+            {json, Users} = erlang_couchdb:invoke_view(CouchDB, "evo", "users", "byUsername", 
+                                                       [{include_docs, true}, {key, ?Q(Username)}]),
+            {Valid, User} = case erlang_couchdb:get_value([<<"rows">>, <<"doc">>], Users) of
+                                [] -> {false, none};
+                                [{struct, U}] -> check_creds(U, Creds)
+                            end,
+    
+            case Valid of
+                true ->
+                    {Key, OldSession} = ?GV(session, Conf),
+                    UserID = ?GV(<<"_id">>, User),
+                    NewSession = [{<<"userID">>, UserID},
+                                  {userInfo, get_user(UserID, Conf)}
+                                  |OldSession],
+                    NewConf = [{session, {Key, NewSession}}|Conf],
+                    save_session(NewConf),
+                    redirect(Req, NewConf);
+                false ->
+                    respond(Req, 'GET', ["login"], [{error, "Invalid credentials"}|Conf])
+            end;
+        _ -> redirect(Req, Conf)
+    end;
 
-    {json, Users} = erlang_couchdb:invoke_view(CouchDB, "evo", "users", "byUsername", 
-                                               [{include_docs, true}, {key, ?Q(Username)}]),
-    {Valid, User} = case erlang_couchdb:get_value([<<"rows">>, <<"doc">>], Users) of
-                        [] -> {false, none};
-                        [{struct, U}] -> check_creds(U, Creds)
-                    end,
-    
-    {Key, OldSession} = ?GV(session, Conf),
-    NewSession = [{<<"userID">>, ?GV(<<"_id">>, User)}|OldSession],
-    save_session([{session, {Key, NewSession}}|Conf]),
-    
-    {wrap, site, [{content, ["Valid: ", Valid] }, {title, "Hey"}]};
+
+respond(Req, 'GET', ["logout"], Conf) ->
+    {Key, Session} = ?GVD(session, Conf, []),
+
+    NewSession = [{K,V} || {K,V} <- Session,
+                           K /= <<"userID">>,
+                           K /= userInfo],
+
+    NewConf = [{session, {Key, NewSession}}|Conf],
+
+    save_session(NewConf),
+
+    redirect(Req, NewConf);
+
 
 %% XXX Debug
-respond(Req, 'GET', ["_clear"], Conf) ->
+respond(_Req, 'GET', ["_clear"], Conf) ->
     CouchDB = ?GV(couchdb, Conf),
     {json, RawSessions} = erlang_couchdb:invoke_view(CouchDB, "evo", "users", "sessions", []),
     Sessions = [{?GV(<<"id">>, S), ?GV(<<"value">>, S)} || {struct, S} 
                 <- erlang_couchdb:get_value(<<"rows">>, RawSessions)],
-    Response = erlang_couchdb:delete_documents(CouchDB, "evo", Sessions),
+    erlang_couchdb:delete_documents(CouchDB, "evo", Sessions),
     {wrap, site, [{content, ["Alright."] }, {title, "Hey"}]};
 
 
@@ -83,12 +131,17 @@ hashfunc(<<"sha384">>) -> fun sha2:hexdigest224/1;
 hashfunc(<<"sha512">>) -> fun sha2:hexdigest224/1.
 
 
+redirect(_Req, Conf) ->
+    {wrap, site, [{content, ["User: ", ?GV(<<"name">>, user_info(Conf))] }, {title, "Hey"}]}.
+
+
+
 %%%-------------------------------------------------------------------
 %%% Sessions
 %%%-------------------------------------------------------------------
 
 
-session_from_cookie(Req, Conf, "/static/" ++ _) ->
+session_from_cookie(_Req, Conf, "/static/" ++ _) ->
     %% Don't bother hitting CouchDB for static files
     {update, Conf};
 session_from_cookie(Req, Conf, _) ->
@@ -135,10 +188,3 @@ retrieve_session(Name, Conf) ->
         undefined -> create_session(Conf);
         _ -> {Key, Session}
     end.
-
-
-save_session(Conf) ->
-    {Key, RawSession} = ?GV(session, Conf),
-    Session = lists:usort([{K,V} || {K,V} <- RawSession, is_binary(K)]),
-    CouchDB = ?GV(couchdb, Conf),
-    erlang_couchdb:update_document(CouchDB, "evo", binary_to_list(Key), Session).
