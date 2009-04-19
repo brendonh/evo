@@ -5,9 +5,9 @@
 %%%
 %%% Created : 18 Apr 2009 by Brendon Hogger <brendonh@lightblue>
 %%%-------------------------------------------------------------------
--module(evosession, []).
+-module(evosession).
 
--export([respond/4, save_session/1, user_info/1]).
+-export([respond/5, save_session/1, user_info/1]).
 
 -include("evo.hrl").
 
@@ -44,7 +44,7 @@ save_session(Conf) ->
 template(login) -> {file, "templates/auto/login.html"}.
 
 
-respond(Req, 'GET', ["login"], Conf) ->
+respond(Req, 'GET', ["login"], Conf, _Args) ->
     case user_info(Conf) of
         [] ->
             {ok, Content} = gen_server:call(?CONFNAME(Conf, "evotemplate"),
@@ -53,7 +53,7 @@ respond(Req, 'GET', ["login"], Conf) ->
         _ -> redirect(Req, Conf)
     end;
 
-respond(Req, 'POST', ["login"], Conf) ->
+respond(Req, 'POST', ["login"], Conf, Args) ->
     case user_info(Conf) of
         [] ->
             CouchDB = ?GV(couchdb, Conf),
@@ -78,13 +78,13 @@ respond(Req, 'POST', ["login"], Conf) ->
                     save_session(NewConf),
                     redirect(Req, NewConf);
                 false ->
-                    respond(Req, 'GET', ["login"], [{error, "Invalid credentials"}|Conf])
+                    respond(Req, 'GET', ["login"], [{error, "Invalid credentials"}|Conf], Args)
             end;
         _ -> redirect(Req, Conf)
     end;
 
 
-respond(Req, 'GET', ["logout"], Conf) ->
+respond(Req, 'GET', ["logout"], Conf, _Args) ->
     {Key, Session} = ?GVD(session, Conf, []),
 
     NewSession = [{K,V} || {K,V} <- Session,
@@ -99,7 +99,7 @@ respond(Req, 'GET', ["logout"], Conf) ->
 
 
 %% XXX Debug
-respond(_Req, 'GET', ["_clear"], Conf) ->
+respond(_Req, 'GET', ["_clear"], Conf, _Args) ->
     CouchDB = ?GV(couchdb, Conf),
     {json, RawSessions} = erlang_couchdb:invoke_view(CouchDB, "evo", "users", "sessions", []),
     Sessions = [{?GV(<<"id">>, S), ?GV(<<"value">>, S)} || {struct, S} 
@@ -108,8 +108,12 @@ respond(_Req, 'GET', ["_clear"], Conf) ->
     {wrap, site, [{content, ["Alright."] }, {title, "Hey"}]};
 
 
-respond(Req, _Method, [], Conf) ->
-    session_from_cookie(Req, Conf, Req:get(path)).
+respond(Req, _Method, always, Conf, _Args) ->
+    session_from_cookie(Req, Conf, Req:get(path));
+
+
+respond(Req, _, _, _Conf, _Args) ->
+    Req:not_found().
 
    
 check_creds(User, Creds) ->
@@ -131,6 +135,7 @@ hashfunc(<<"sha384">>) -> fun sha2:hexdigest224/1;
 hashfunc(<<"sha512">>) -> fun sha2:hexdigest224/1.
 
 
+% XXX Todo
 redirect(_Req, Conf) ->
     {wrap, site, [{content, ["User: ", ?GV(<<"name">>, user_info(Conf))] }, {title, "Hey"}]}.
 

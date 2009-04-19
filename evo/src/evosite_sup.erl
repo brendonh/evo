@@ -38,7 +38,7 @@ init([Conf]) ->
     Bits = lists:concat(
              lists:map(
                fun (B) -> start(B, Conf) end,
-               [mochiweb, cometd, magicdb, evotemplate, components])),
+               [mochiweb, cometd, magicdb, evotemplate])),
 
     {ok,{{one_for_one,0,60}, Bits}}.
 
@@ -80,27 +80,8 @@ start(evotemplate, Conf) ->
     TemplateServerName = ?CONFNAME(Conf, "evotemplate"),
     [{TemplateServerName, 
       {evotemplate, start_link, [TemplateServerName]},
-      permanent,5000,worker,[evotemplate]}];
+      permanent,5000,worker,[evotemplate]}].
 
-start(components, Conf) ->
-    lists:concat(
-      lists:map(
-        fun({_Path, {Type, Args}}) -> init_component(Type, Args, Conf) end,
-        proplists:get_value(components, Conf, [])));
-
-start(always, Conf) ->
-    lists:concat(
-      lists:map(
-        fun({Type, Args}) -> init_component(Type, Args, Conf) end,
-        proplists:get_value(alawys, Conf, []))).
-
-
-init_component(gen_server, {Mod, Name, InitArgs}, Conf) ->
-    CompName = ?COMPONENT(Conf, Name),
-    [{CompName, {Mod, start_link, [Conf, Name, InitArgs]},
-      permanent,2000,worker,[Mod]}];
-init_component(gen_server, Name, Conf) -> [];
-init_component(module, {_Mod, _InitArgs}, _Conf) -> [].
 
 make_loop(Conf) ->
     fun(Req) -> evosite:respond(Req, Conf) end.

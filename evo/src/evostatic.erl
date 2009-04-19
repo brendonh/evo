@@ -1,8 +1,15 @@
--module(evostatic, [DocRoot]).
+%%%-------------------------------------------------------------------
+%%% File    : evostatic.erl
+%%% Author  : Brendon Hogger <brendonh@lightblue>
+%%% Description : Serve static files
+%%%
+%%% Created : 19 Apr 2009 by Brendon Hogger <brendonh@lightblue>
+%%%-------------------------------------------------------------------
+-module(evostatic).
 
--export([respond/4]).
+-export([respond/5]).
 
-respond(Req, 'GET', [], _Conf) ->
+respond(Req, 'GET', [], _Conf, _Args) ->
     {response, Req:not_found()};
-respond(Req, 'GET', PathBits, _Conf) ->
+respond(Req, 'GET', PathBits, _Conf, [DocRoot]) ->
     {response, Req:serve_file(string:join(PathBits, "/"), DocRoot)}.

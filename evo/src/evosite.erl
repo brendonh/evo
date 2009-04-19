@@ -27,9 +27,9 @@ get_response([], Req, Conf) ->
 get_response([Top|Rest], Req, Conf) ->
     case ?GVD(Top, ?GVD(components, Conf, []), none) of
         none -> Req:not_found();
-        CallbackConf -> 
-            Callback = get_callback(Conf, CallbackConf),
-            run_last_responder(Callback, Rest, Req, Conf)
+        {Module, Args} -> 
+            ?DBG({module, Module, args, Args}),
+            run_last_responder(Module, Rest, Req, Conf, Args)
     end.
 
 
@@ -40,43 +40,29 @@ get_response([Top|Rest], Req, Conf) ->
 
 run_always([], _Req, Conf) ->
     {continue, Conf};
-run_always([Always|Rest], Req, Conf) ->
-    Callback = get_callback(Conf, Always),
-    Result = run_responder(Callback, [], Req, Conf),
+run_always([{Module, Args}|Rest], Req, Conf) ->
+    Result = run_responder(Module, always, Req, Conf, Args),
     case Result of
         {update, NewConf} -> run_always(Rest, Req, NewConf);
         Other -> Other
     end.
 
-
-get_callback(Conf, {module, {Mod, InitArgs}}) ->
-    Instance = apply(Mod, new, InitArgs),
-    fun(Req, Method, Args) -> Instance:respond(Req, Method, Args, Conf) end;
-get_callback(Conf, {gen_server, {_Mod, Name, _InitArgs}}) ->
-    get_callback(Conf, {gen_server, Name});
-get_callback(Conf, {gen_server, Name}) ->
-    fun(Req, Method, Args) -> 
-            gen_server:call(?COMPONENT(Conf, Name), 
-                            {respond, Req, Method, Args}) 
-    end.
-
-
-run_last_responder(Callback, Args, Req, Conf) ->
-    case run_responder(Callback, Args, Req, Conf) of
+run_last_responder(Module, PathBits, Req, Conf, Args) ->
+    case run_responder(Module, PathBits, Req, Conf, Args) of
         {update, _} ->
             display_error(Req, "Responder didn't return a body.", []);
         Other -> Other
     end.    
 
 
-run_responder(Callback, Args, Req, Conf) ->
-    case catch Callback(Req, Req:get(method), Args) of
+run_responder(Module, PathBits, Req, Conf, Args) ->
+    case catch Module:respond(Req, Req:get(method), PathBits, Conf, Args) of
         {response, Response} -> 
             Response;
         {wrap, TemplateName, Data} ->
             wrap_template(TemplateName, Data, Req, Conf);
-        {child, NewCallback, NewArgs, NewConf} -> 
-            run_responder(NewCallback, NewArgs, Req, NewConf);
+        {child, {NewModule, NewArgs}, NewPathBits, NewConf} -> 
+            run_responder(NewModule, NewPathBits, Req, NewConf, NewArgs);
         {error, Error} ->
             display_error(Req, "Error: ~p~n", [Error]);
         {'EXIT', Error} ->
