@@ -25,9 +25,7 @@
         gen_server:call(?CONFNAME(State#state.conf, "evotemplate"),
                         {C,T,D,Cf,State#state.templateCallback})).
 
--define(SelfLink(Path), ?LINK(State#state.conf, 
-                              atom_to_list(State#state.table), 
-                              Path)).
+-define(SelfLink(Path), ?LINK(atom_to_list(State#state.table), Path)).
 
 -record(state, {
 

@@ -10,6 +10,23 @@
   font-size: 1.5em;
 }
 
+
+a { text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+
+#nav {
+ float: right;
+}
+
+#nav h1 {
+ color: #ff7800;
+}
+
+#nav a {
+ color: #d41e00;
+}
+
 .subTitle {
   margin-left: 20px;
   font-size: 1.2em;

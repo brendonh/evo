@@ -27,9 +27,7 @@ get_response([], Req, Conf) ->
 get_response([Top|Rest], Req, Conf) ->
     case ?GVD(Top, ?GVD(components, Conf, []), none) of
         none -> Req:not_found();
-        {Module, Args} -> 
-            ?DBG({module, Module, args, Args}),
-            run_last_responder(Module, Rest, Req, Conf, Args)
+        {Module, Args} -> run_last_responder(Module, Rest, Req, Conf, Args)
     end.
 
 
@@ -103,7 +101,7 @@ run_wrap_template(Type, Template, Filename, Data, Req, Conf) ->
                end,
 
     case gen_server:call(?CONFNAME(Conf, "evotemplate"),
-                         {run, TemplateName, Data, [], Callback}) of
+                         {run, Template, Data, [], Callback}) of
         {ok, Final} -> Req:ok({Type, ?GV(headers, Conf), Final});
         {error, Error} -> display_error(Req, "Template error: ~p~n", [Error]);
         Other -> display_error(Req, "Unknown template response: ~p~n", [Other])

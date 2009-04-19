@@ -327,6 +327,11 @@ emitFullTag(State, Children) ->
      lists:reverse(Children),
      closeTag(State)}.
 
+
+emitEmptyTag(#templateState{tag={none,script}}=State) ->
+    emitFullTag(State, []); %% Screw you, HTML
+emitEmptyTag(#templateState{tag={none,'div'}}=State) ->
+    emitFullTag(State, []); %% Seriously HTML, I will hit you with a bat
 emitEmptyTag(State) ->
     [lists:flatten([$<, flatten_name(State#templateState.tag), 
                     flatten_attrs(State#templateState.attrs),

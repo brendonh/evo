@@ -7,9 +7,14 @@
 %%%-------------------------------------------------------------------
 -module(evosession).
 
--export([respond/5, save_session/1, user_info/1]).
-
 -include("evo.hrl").
+
+%% Evo component callbacks
+-export([respond/5, nav/2]).
+
+%% API
+-export([save_session/1, user_info/1]).
+
 
 
 %%%-------------------------------------------------------------------
@@ -28,6 +33,11 @@ save_session(Conf) ->
     erlang_couchdb:update_document(CouchDB, "evo", binary_to_list(Key), Session).
 
 
+nav(Conf, Args) ->
+    case user_info(Conf) of
+        [] -> {"User", [{"Login", "/session/login"}]};
+        _ -> {"User", [{"Logout", "/session/logout"}]}
+    end.
 
 
 %%%-------------------------------------------------------------------

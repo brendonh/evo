@@ -7,7 +7,12 @@
 %%%-------------------------------------------------------------------
 -module(evostatic).
 
--export([respond/5]).
+-include("evo.hrl").
+
+-export([respond/5, nav/2]).
+
+nav(_Conf, _Args) -> [].
+    
 
 respond(Req, 'GET', [], _Conf, _Args) ->
     {response, Req:not_found()};

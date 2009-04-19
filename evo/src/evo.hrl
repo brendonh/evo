@@ -10,7 +10,7 @@
 -define(COMPONENT(Conf, Name),
         evoutil:concat_atoms([?SITENAME(Conf), '_component_', Name])).
 
--define(LINK(Conf, Component, Path),
+-define(LINK(Component, Path),
         [$/|string:join([Component|Path],"/")]).
 
 

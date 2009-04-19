@@ -4,10 +4,11 @@
 
 -export([data/1, foreach/1, foreach/2, items/1, ifdata/1, get_data/1, format/2]).
 
+
 data(State) ->
     Data = get_data(State),
     State#templateState{children=[format(State, Data)|State#templateState.children],
-                render=none}.
+                        render=none}.
 
 foreach(State) ->
     foreach(State, "none").
