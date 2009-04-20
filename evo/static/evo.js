@@ -44,8 +44,3 @@ var configure_menus = function(sel) {
     });
     $(sel).css('display', 'block');
 };
-
-var whatever = function() {
-    
-
-};
