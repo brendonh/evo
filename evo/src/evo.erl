@@ -272,6 +272,9 @@ emitTag(#templateState{}=State) ->
 emitTag({tags, Tags}) ->
     {Tags, none};
 
+emitTag(Other) when is_binary(Other) ->
+    {binary_to_list(Other), none};
+
 emitTag(Other) ->
     {io_lib:format("~p", [Other]), none}.
 

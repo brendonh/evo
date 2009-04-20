@@ -23,7 +23,9 @@ respond(Req, Conf) ->
 
 
 get_response([], Req, Conf) ->
-    get_response([""], Req, Conf);
+    %get_response([?GVD(default, Conf, "default")], Req, Conf);
+    Req:respond({302, [{location, ?GVD(default, Conf, "/default")}], "Redirecting"});
+
 get_response([Top|Rest], Req, Conf) ->
     case ?GVD(Top, ?GVD(components, Conf, []), none) of
         none -> Req:not_found();

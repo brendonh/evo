@@ -17,4 +17,13 @@ nav(_Conf, _Args) -> [].
 respond(Req, 'GET', [], _Conf, _Args) ->
     {response, Req:not_found()};
 respond(Req, 'GET', PathBits, _Conf, [DocRoot]) ->
-    {response, Req:serve_file(string:join(PathBits, "/"), DocRoot)}.
+
+    % We should be using serve_file here, but it seems to take a while
+    % to notice changes -- perhaps a clock issue? Anyway, turn it on later.
+    %{response, Req:serve_file(string:join(PathBits, "/"), DocRoot)}.
+
+    File = filename:join([DocRoot|PathBits]),
+    ContentType = mochiweb_util:guess_mime(File),
+    {ok, Content} = file:read_file(File),
+    {response, Req:ok({ContentType, Content})}.
+

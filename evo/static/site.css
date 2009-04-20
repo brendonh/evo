@@ -14,21 +14,55 @@
 a { text-decoration: none; }
 a:hover { text-decoration: underline; }
 
+#session {
+  float: right;
+  color: #ba2700;
+  font-size: 12px;
+}
+
+#session a {
+  color: #dc5300;
+}
+
+#session input[type=text], #session input[type=password] {
+  border: 1px solid #ba2700;
+  margin: 2px;
+}
+
+#session input[type=submit] {
+  border: 1px solid white;
+  background-color: #ff9d4d;
+  color: white;
+  font-size: 14px;
+}
+
+#session input[type=submit]:hover {
+  border: 1px solid #ba2700;
+}
+
 
 #nav {
- float: right;
+  margin: 10px 0;
+}
+
+#nav div {
+  float: left;
 }
 
 #nav h1 {
- color: #ff7800;
+  color: white;
+  padding: 5px 10px;
+  border-right: 1px solid white;
+  background-color: #ff9d4d;
 }
 
 #nav a {
- color: #d41e00;
+  color: #d41e00;
 }
 
 .subTitle {
-  margin-left: 20px;
+  clear: both;
+  padding: 10px 0;
   font-size: 1.2em;
 }
 

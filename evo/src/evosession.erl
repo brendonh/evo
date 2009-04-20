@@ -33,11 +33,7 @@ save_session(Conf) ->
     erlang_couchdb:update_document(CouchDB, "evo", binary_to_list(Key), Session).
 
 
-nav(Conf, Args) ->
-    case user_info(Conf) of
-        [] -> {"User", [{"Login", "/session/login"}]};
-        _ -> {"User", [{"Logout", "/session/logout"}]}
-    end.
+nav(_Conf, _Args) -> [].
 
 
 %%%-------------------------------------------------------------------
@@ -51,19 +47,27 @@ nav(Conf, Args) ->
 -define(Q(S), lists:concat(['"', S, '"'])).
 
 
-template(login) -> {file, "templates/auto/login.html"}.
+template(login) -> {file, "templates/auto/login.html"};
+template(loggedin) -> {file, "templates/auto/loggedin.html"}.
 
 
-respond(Req, 'GET', ["login"], Conf, _Args) ->
-    case user_info(Conf) of
-        [] ->
-            {ok, Content} = gen_server:call(?CONFNAME(Conf, "evotemplate"),
-                                            {run_raw, {reload, login}, Conf, [], fun template/1}),
-            {wrap, site, [{content, Content}, {title, "Login"}]};
-        _ -> redirect(Req, Conf)
-    end;
+respond(Req, 'GET', [], Conf, _Args) ->
+    {Template, Name} = case user_info(Conf) of
+                           [] -> {login, ""};
+                           User -> {loggedin, ?GV(<<"name">>, User)}
+                       end,
+    
+    Data = [{error, ?GVD(error, Conf, "")},
+            {name, Name}],
 
-respond(Req, 'POST', ["login"], Conf, Args) ->
+    {ok, Content} = gen_server:call(?CONFNAME(Conf, "evotemplate"),
+                                    {run, {reload, Template}, Data, [], fun template/1}),
+
+
+    {response, Req:ok({"text/html", Content})};
+
+
+respond(Req, 'POST', [], Conf, Args) ->
     case user_info(Conf) of
         [] ->
             CouchDB = ?GV(couchdb, Conf),
@@ -88,7 +92,7 @@ respond(Req, 'POST', ["login"], Conf, Args) ->
                     save_session(NewConf),
                     redirect(Req, NewConf);
                 false ->
-                    respond(Req, 'GET', ["login"], [{error, "Invalid credentials"}|Conf], Args)
+                    respond(Req, 'GET', [], [{error, "Invalid credentials"}|Conf], Args)
             end;
         _ -> redirect(Req, Conf)
     end;
@@ -123,7 +127,7 @@ respond(Req, _Method, always, Conf, _Args) ->
 
 
 respond(Req, _, _, _Conf, _Args) ->
-    Req:not_found().
+    {response, Req:not_found()}.
 
    
 check_creds(User, Creds) ->
@@ -146,8 +150,9 @@ hashfunc(<<"sha512">>) -> fun sha2:hexdigest224/1.
 
 
 % XXX Todo
-redirect(_Req, Conf) ->
-    {wrap, site, [{content, ["User: ", ?GV(<<"name">>, user_info(Conf))] }, {title, "Hey"}]}.
+redirect(Req, Conf) ->
+    {response, Req:respond({302, [{"Location", ?GVD(default, Conf, "/default")}], 
+                            "Redirecting..."})}.
 
 
 
