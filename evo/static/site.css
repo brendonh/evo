@@ -1,5 +1,5 @@
 #main {
-  width: 960px;
+  width: 700px;
   margin: 10px auto 10px auto;
   padding: 10px;
   border: 1px dotted black;
@@ -58,6 +58,10 @@ a:hover { text-decoration: underline; }
 
 #nav a {
   color: #d41e00;
+}
+
+#nav li {
+  border: 0;
 }
 
 .subTitle {

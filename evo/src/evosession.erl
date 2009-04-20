@@ -29,8 +29,8 @@ user_info(Conf) ->
 save_session(Conf) ->
     {Key, RawSession} = ?GV(session, Conf),
     Session = lists:usort([{K,V} || {K,V} <- RawSession, is_binary(K)]),
-    CouchDB = ?GV(couchdb, Conf),
-    erlang_couchdb:update_document(CouchDB, "evo", binary_to_list(Key), Session).
+    {CouchDB, DB} = ?GV(couchdb, Conf),
+    erlang_couchdb:update_document(CouchDB, DB, binary_to_list(Key), Session).
 
 
 nav(_Conf, _Args) -> [].
@@ -70,11 +70,11 @@ respond(Req, 'GET', [], Conf, _Args) ->
 respond(Req, 'POST', [], Conf, Args) ->
     case user_info(Conf) of
         [] ->
-            CouchDB = ?GV(couchdb, Conf),
+            {CouchDB, DB} = ?GV(couchdb, Conf),
             Creds = mochiweb_multipart:parse_form(Req),
             Username = ?GV("username", Creds),
 
-            {json, Users} = erlang_couchdb:invoke_view(CouchDB, "evo", "users", "byUsername", 
+            {json, Users} = erlang_couchdb:invoke_view(CouchDB, DB, "users", "byUsername", 
                                                        [{include_docs, true}, {key, ?Q(Username)}]),
             {Valid, User} = case erlang_couchdb:get_value([<<"rows">>, <<"doc">>], Users) of
                                 [] -> {false, none};
@@ -114,11 +114,11 @@ respond(Req, 'GET', ["logout"], Conf, _Args) ->
 
 %% XXX Debug
 respond(_Req, 'GET', ["_clear"], Conf, _Args) ->
-    CouchDB = ?GV(couchdb, Conf),
-    {json, RawSessions} = erlang_couchdb:invoke_view(CouchDB, "evo", "users", "sessions", []),
+    {CouchDB, DB} = ?GV(couchdb, Conf),
+    {json, RawSessions} = erlang_couchdb:invoke_view(CouchDB, DB, "users", "sessions", []),
     Sessions = [{?GV(<<"id">>, S), ?GV(<<"value">>, S)} || {struct, S} 
                 <- erlang_couchdb:get_value(<<"rows">>, RawSessions)],
-    erlang_couchdb:delete_documents(CouchDB, "evo", Sessions),
+    erlang_couchdb:delete_documents(CouchDB, DB, Sessions),
     {wrap, site, [{content, ["Alright."] }, {title, "Hey"}]};
 
 
@@ -187,22 +187,27 @@ session_from_cookie(Req, Conf, _) ->
 
 
 get_user(UserID, Conf) ->
-    CouchDB = ?GV(couchdb, Conf),
+    {CouchDB, DB} = ?GV(couchdb, Conf),
     {json, {struct, User}} = erlang_couchdb:retrieve_document(
-        CouchDB, "evo", binary_to_list(UserID)),
+        CouchDB, DB, binary_to_list(UserID)),
     User.
 
 
 create_session(Conf) ->
-    CouchDB = ?GV(couchdb, Conf),
+    {CouchDB, DB} = ?GV(couchdb, Conf),
     {json, {struct, Response}} = erlang_couchdb:create_document(
-        CouchDB, "evo", [{<<"type">>, <<"session">>}]),
-    {?GV(<<"id">>, Response), []}.
+        CouchDB, DB, [{<<"type">>, <<"session">>}]),
+
+    case ?GV(<<"error">>, Response) of
+        undefined ->
+            {?GV(<<"id">>, Response), []};
+        Error -> throw({'EXIT', couldnt_create_session})
+    end.
 
 
 retrieve_session(Name, Conf) ->
-    CouchDB = ?GV(couchdb, Conf),
-    {json, {struct, Session}} = erlang_couchdb:retrieve_document(CouchDB, "evo", Name),
+    {CouchDB, DB} = ?GV(couchdb, Conf),
+    {json, {struct, Session}} = erlang_couchdb:retrieve_document(CouchDB, DB, Name),
     Key = ?GVD(<<"_id">>, Session, undefined),
     case Key of
         undefined -> create_session(Conf);

@@ -27,4 +27,4 @@ respond(Req, 'GET', [], Conf, _Args) ->
     {response, Req:ok({"text/html", Content})}.
 
 
-nav(_Conf, _Args) -> [].
+nav(_Conf, _Args) -> {"Test", [{"One", "/what"}, {"Two", "/where"}]}.
