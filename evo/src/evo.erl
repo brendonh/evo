@@ -335,6 +335,8 @@ emitEmptyTag(#templateState{tag={none,script}}=State) ->
     emitFullTag(State, []); %% Screw you, HTML
 emitEmptyTag(#templateState{tag={none,'div'}}=State) ->
     emitFullTag(State, []); %% Seriously HTML, I will hit you with a bat
+emitEmptyTag(#templateState{tag={none,'textarea'}}=State) ->
+    emitFullTag(State, []); %% Until you fall over and cry
 emitEmptyTag(State) ->
     [lists:flatten([$<, flatten_name(State#templateState.tag), 
                     flatten_attrs(State#templateState.attrs),

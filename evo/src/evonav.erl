@@ -15,10 +15,18 @@ template(nav) -> {file, "templates/auto/nav.html"}.
 
 respond(Req, 'GET', [], Conf, Args) ->
     Components = ?GV(components, Conf),
+
     StaticNav = ?GVD(static, Args, []),
-    Nav = [{T, N} || {_C, {M,A}} <- Components,
-                     {T, N} <- [M:nav(Conf,A)],
-                     N /= []] ++ StaticNav,
+
+    UserNav = case evosession:user_info(Conf) of
+                   [] -> [];
+                   _ -> ?GVD(user, Args, [])
+               end,
+
+    Nav = [{T, [X || X <- N, X /= undefined]} 
+           || {_C, {M,A}} <- Components,
+              {T, N} <- [M:nav(Conf,A)],
+              N /= []] ++ StaticNav ++ UserNav,
 
     {ok, Content} = gen_server:call(?CONFNAME(Conf, "evotemplate"),
                                     {run, {reload, nav}, 
