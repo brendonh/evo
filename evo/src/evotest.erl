@@ -103,7 +103,7 @@ test() ->
     CompoundData = [{alpha, Data}],
 
     T("DataKey", '<e:inv e:render="data" e:key="two" />', Data, 'world'),
-    T("CompounKey", '<e:inv e:render="data" e:key="alpha.one" />', CompoundData, 'hello'),
+    T("CompoundKey", '<e:inv e:render="data" e:key="alpha.one" />', CompoundData, 'hello'),
     T("Slot", '<e:slot />', "Data", 'Data'),
     T("KeySlot", '<e:slot key="one" />', Data, 'hello'),
     T("CompoundKeySlot", '<e:slot key="alpha.two" />', CompoundData, 'world'),

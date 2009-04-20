@@ -13,11 +13,12 @@
 
 template(nav) -> {file, "templates/auto/nav.html"}.
 
-respond(Req, 'GET', [], Conf, _Args) ->
+respond(Req, 'GET', [], Conf, Args) ->
     Components = ?GV(components, Conf),
+    StaticNav = ?GVD(static, Args, []),
     Nav = [{T, N} || {_C, {M,A}} <- Components,
                      {T, N} <- [M:nav(Conf,A)],
-                     N /= []],
+                     N /= []] ++ StaticNav,
 
     {ok, Content} = gen_server:call(?CONFNAME(Conf, "evotemplate"),
                                     {run, {reload, nav}, 
@@ -27,4 +28,4 @@ respond(Req, 'GET', [], Conf, _Args) ->
     {response, Req:ok({"text/html", Content})}.
 
 
-nav(_Conf, _Args) -> {"Test", [{"One", "/what"}, {"Two", "/where"}]}.
+nav(_Conf, _Args) -> none.

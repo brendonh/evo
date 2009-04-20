@@ -12,7 +12,7 @@
 -include("evo.hrl").
 
 %% API
--export([start_link/1]).
+-export([start_link/1, start_epgsql/5]).
 
 %% Supervisor callbacks
 -export([init/1]).
@@ -38,7 +38,7 @@ init([Conf]) ->
     Bits = lists:concat(
              lists:map(
                fun (B) -> start(B, Conf) end,
-               [mochiweb, cometd, magicdb, evotemplate])),
+               [mochiweb, pgsql, evotemplate])),
 
     {ok,{{one_for_one,0,60}, Bits}}.
 
@@ -76,6 +76,17 @@ start(magicdb, Conf) ->
             []              
     end;
 
+
+start(pgsql, Conf) ->
+    case ?GV(pgsql, Conf) of
+        undefined -> [];
+        PgStartup ->
+            PgName = ?CONFNAME(Conf, "pgsql"),
+            [{PgName, {?MODULE, start_epgsql, [PgName|PgStartup]},
+              permanent,5000,worker,[pgsql_connection]}]
+    end;
+
+
 start(evotemplate, Conf) ->
     TemplateServerName = ?CONFNAME(Conf, "evotemplate"),
     [{TemplateServerName, 
@@ -85,3 +96,10 @@ start(evotemplate, Conf) ->
 
 make_loop(Conf) ->
     fun(Req) -> evosite:respond(Req, Conf) end.
+
+
+
+start_epgsql(Name, Host, User, Pass, Opts) ->
+    {ok, C} = gen_fsm:start_link({local, Name}, pgsql_connection, [], []),
+    pgsql_connection:connect(C, Host, User, Pass, Opts),
+    {ok, C}.

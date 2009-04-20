@@ -13,7 +13,7 @@
 -export([respond/5, nav/2]).
 
 %% API
--export([save_session/1, user_info/1]).
+-export([save_session/1, user_info/1, get_user/2]).
 
 
 
@@ -201,7 +201,7 @@ create_session(Conf) ->
     case ?GV(<<"error">>, Response) of
         undefined ->
             {?GV(<<"id">>, Response), []};
-        Error -> throw({'EXIT', couldnt_create_session})
+        _Error -> throw({'EXIT', couldnt_create_session})
     end.
 
 
