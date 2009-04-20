@@ -16,6 +16,7 @@ a:hover { text-decoration: underline; }
 
 #session {
   float: right;
+  padding-top: 20px;
   color: #ba2700;
   font-size: 12px;
 }
@@ -42,6 +43,7 @@ a:hover { text-decoration: underline; }
 
 
 #nav {
+  display: none;
   margin: 10px 0;
 }
 
@@ -50,17 +52,28 @@ a:hover { text-decoration: underline; }
 }
 
 #nav h1 {
-  color: white;
   padding: 5px 10px;
   border-right: 1px solid white;
   background-color: #ff9d4d;
+  cursor: pointer;
+}
+
+#nav h1, #nav h1 a {
+  color: white;
 }
 
 #nav a {
   color: #d41e00;
 }
 
+#nav ul {
+  position: absolute;
+  display: none;
+  background-color: #eee;
+}
+
 #nav li {
+  padding: 5px;
   border: 0;
 }
 

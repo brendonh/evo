@@ -12,39 +12,40 @@ var loadComponent = function() {
     $(this).css("display", "block");
 };
 
+
+
+
+
+//*******************
+// MENUS
+//*******************
+
+var current_menu;
+
 var configure_menus = function(sel) {
     $(sel).children("div").each(function() {
-        //$items = $(this).child
+        var items = $(this).find("li");
+        if (items.length == 1) {
+            var link = $(items[0]).find("a");
+            $(this).find("h1").empty().append(link);
+        } else {
+          $(this).hover(function() {
+                var menu = $(this).find("ul");
+                var position = $(this).position();
+                menu.css('left', position.left);
+                menu.css('top', position.top + $(this).height());   
+                menu.css('width', $(this).css('width'));
+                menu.show();
+            }, function() {
+                $(this).find("ul").hide();
+            }
+          );
+        }
     });
+    $(sel).css('display', 'block');
 };
 
 var whatever = function() {
-    $("#siteNavigation img").click(function() {
-        var catName = $(this).attr('id').split('_', 2)[1];
-        var menuID = '#navigationMenu_' + catName;
-        var menu = $(menuID);
-
-        if (!menu.length) {
-            if (current_menu) current_menu.hide();
-            current_menu = undefined;
-            return;
-        }
-
-        if (menu.is(':hidden')) {
-
-            if (current_menu) current_menu.hide();
-            current_menu = undefined;
-
-            var position = $(this).position();
-            menu.css('left', position.left);
-            menu.css('top', position.top + $(this).height() - 1);        
-            menu.show();
-
-            current_menu = menu;
-        } else {
-            menu.hide();
-        }
-
-    });
+    
 
 };
