@@ -50,6 +50,7 @@ init([Conf]) ->
 start(mochiweb, Conf) ->
     MochiName = ?CONFNAME(Conf, "mochiweb"),
     Port = ?GVD(port, Conf, ?DEFAULT_PORT),
+    ?DBG({evosite, ?SITENAME(Conf), Port}),
     [{MochiName, {mochiweb_http, start,
                   [[{name, MochiName},
                     {port, Port}, 
