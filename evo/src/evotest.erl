@@ -29,7 +29,7 @@ test() ->
 
     %% Basics
 
-    T("EmptyTop", '<div />', [], '<div />'),
+    T("EmptyTop", '<div />', [], '<div>\n</div>'),
     T("TextTop", '<div>Hi</div>', [], '<div>Hi</div>'),
     T("PrefixSpace", '<div> Hi</div>', [], '<div> Hi</div>'),
     T("SuffixSpace", '<div>Hi </div>', [], '<div>Hi </div>'),
@@ -91,7 +91,7 @@ test() ->
       '<div e:render="foreach"><div e:render="foreach"><e:slot /></div></div>', 
       [[1,2,3], [4,5,6]], 
       '<div><div>123</div><div>456</div></div>'),
-    T("ForeachRowIndex", '<div e:render="foreach"><e:slot e:dataExp="{R,D}" /></div>', [a,b,c,d], '<div>{0,a}{1,b}{2,c}{3,d}</div>'),
+    T("ForeachRowIndex", '<div e:render="foreach"><e:slot e:dataExp="{Row,D}" /></div>', [a,b,c,d], '<div>{0,a}{1,b}{2,c}{3,d}</div>'),
     T("ForeachOddEven", '<div e:render="foreach"><e:slot e:dataExp="OddEven" />,</div>', [a,b,c,d], '<div>odd,even,odd,even,</div>'),
     F("ForeachClass", '<ul e:render="foreach"><li><e:attr name="class" e:render="data" e:dataExp="OddEven" /><e:slot /></li></ul>', 
       [a,b,c,d], '<ul><li class="odd">a</li><li class="even">b</li><li class="odd">c</li><li class="even">d</li></ul>'),
@@ -139,7 +139,7 @@ test() ->
 
 run_template(Template, Data, Name, Output) ->
     Self = self(),
-    Template ! {run, Data, [{pretty, false}], Self},
+    Template ! {run, Data, [{pretty, raw}], Self},
 
     receive
         {Template, result, R} ->

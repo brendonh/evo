@@ -248,7 +248,8 @@ emitTag(#templateState{tag={e,slot}}=State) ->
             Data;
         Keys ->
             lists:foldl(
-              fun(E, A) -> proplists:get_value(list_to_atom(E), A) end,
+              fun ("_top", _) -> get_cache(0);
+                  (E, A) -> proplists:get_value(list_to_atom(E), A) end,
               Data, string:tokens(Keys, "."))
     end,
     emitTag(evorender:format(State, Final));

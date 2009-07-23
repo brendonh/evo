@@ -13,8 +13,9 @@
 -export([respond/5, nav/2]).
 
 %% API
--export([save_session/1, user_info/1, get_user/2]).
+-export([save_session/1, user_info/1, get_user/2, login/3]).
 
+-define(Q(S), lists:concat(['"', S, '"'])).
 
 
 %%%-------------------------------------------------------------------
@@ -36,6 +37,32 @@ save_session(Conf) ->
 nav(_Conf, _Args) -> [].
 
 
+
+login(Username, GivenPass, Conf) ->
+    {CouchDB, DB} = ?GV(couchdb, Conf),
+    {json, Users} = erlang_couchdb:invoke_view(CouchDB, DB, "users", "byUsername", 
+                                               [{include_docs, true}, {key, ?Q(Username)}]),
+    {Valid, User} = case erlang_couchdb:get_value([<<"rows">>, <<"doc">>], Users) of
+                        [] -> {false, none};
+                        [{struct, U}] -> check_creds(U, GivenPass)
+                    end,
+    
+    case Valid of
+        true ->
+            {Key, OldSession} = ?GV(session, Conf),
+            UserID = ?GV(<<"_id">>, User),
+            NewSession = [{<<"userID">>, UserID},
+                          {userInfo, get_user(UserID, Conf)}
+                          |OldSession],
+            NewConf = [{session, {Key, NewSession}}|Conf],
+            save_session(NewConf),
+            {ok, NewConf};
+        false ->
+            {error, invalid}
+    end.
+
+
+
 %%%-------------------------------------------------------------------
 %%% Login / logout Evo pages
 %%%-------------------------------------------------------------------
@@ -43,8 +70,6 @@ nav(_Conf, _Args) -> [].
 -define(Template(C, T, D, Cf), 
         gen_server:call(?CONFNAME(Conf, "evotemplate"),
                         {C,T,D,Cf,State#state.templateCallback})).
-
--define(Q(S), lists:concat(['"', S, '"'])).
 
 
 template(login) -> {file, "templates/auto/login.html"};
@@ -70,29 +95,13 @@ respond(Req, 'GET', [], Conf, _Args) ->
 respond(Req, 'POST', [], Conf, Args) ->
     case user_info(Conf) of
         [] ->
-            {CouchDB, DB} = ?GV(couchdb, Conf),
             Creds = mochiweb_multipart:parse_form(Req),
             Username = ?GV("username", Creds),
+            GivenPass = ?GV("password", Creds),
 
-            {json, Users} = erlang_couchdb:invoke_view(CouchDB, DB, "users", "byUsername", 
-                                                       [{include_docs, true}, {key, ?Q(Username)}]),
-            {Valid, User} = case erlang_couchdb:get_value([<<"rows">>, <<"doc">>], Users) of
-                                [] -> {false, none};
-                                [{struct, U}] -> check_creds(U, Creds)
-                            end,
-    
-            case Valid of
-                true ->
-                    {Key, OldSession} = ?GV(session, Conf),
-                    UserID = ?GV(<<"_id">>, User),
-                    NewSession = [{<<"userID">>, UserID},
-                                  {userInfo, get_user(UserID, Conf)}
-                                  |OldSession],
-                    NewConf = [{session, {Key, NewSession}}|Conf],
-                    save_session(NewConf),
-                    redirect(Req, NewConf);
-                false ->
-                    respond(Req, 'GET', [], [{error, "Invalid credentials"}|Conf], Args)
+            case login(Username, GivenPass, Conf) of
+                {ok, NewConf} -> redirect(Req, NewConf);
+                {error, _} -> respond(Req, 'GET', [], [{error, "Invalid credentials"}|Conf], Args)
             end;
         _ -> redirect(Req, Conf)
     end;
@@ -130,9 +139,8 @@ respond(Req, _, _, _Conf, _Args) ->
     {response, Req:not_found()}.
 
    
-check_creds(User, Creds) ->
+check_creds(User, GivenPass) ->
     {struct, UNPW} = ?GV(<<"unpw">>, User),
-    GivenPass = ?GV("password", Creds),
     RealPass = ?GV(<<"password">>, UNPW),
     HashFunc = hashfunc(?GVD(<<"hash">>, UNPW, <<"plaintext">>)),
     case list_to_binary(HashFunc(GivenPass)) == RealPass of
@@ -166,6 +174,7 @@ session_from_cookie(_Req, Conf, "/static/" ++ _) ->
     {update, Conf};
 session_from_cookie(Req, Conf, _) ->
     CookieName = lists:concat(["evo_session_", ?SITENAME(Conf)]),
+
     {Key, DBSession} = case Req:get_cookie_value(CookieName) of
                            undefined -> create_session(Conf);
                            Existing -> retrieve_session(Existing, Conf)
