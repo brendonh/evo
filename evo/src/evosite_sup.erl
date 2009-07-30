@@ -38,9 +38,9 @@ init([Conf]) ->
     Bits = lists:concat(
              lists:map(
                fun (B) -> start(B, Conf) end,
-               [mochiweb, pgsql, evotemplate])),
+               [mochiweb, pgsql, amqp, evotemplate])),
 
-    {ok,{{one_for_one,0,60}, Bits}}.
+    {ok,{{one_for_one,2,60}, Bits}}.
 
 
 %%====================================================================
@@ -63,19 +63,6 @@ start(cometd, Conf) ->
     [{CometdName, {cometd_sup, start_link, []},
       permanent, 2000, supervisor, [cometd_sup]}];
 
-start(magicdb, Conf) ->
-    case proplists:get_value(dbinfo, Conf) of
-        {DB, User, Pass} ->
-            DSN = lists:flatten(io_lib:format("DSN=~s;UID=~s;PWD=~s", [DB, User, Pass])),
-            MagicName = ?CONFNAME(Conf, "magicdb"),
-            [{MagicName, {magicdb, start_link, [{dsn, DSN}, {local, MagicName}]},
-              permanent,2000,worker,[magicdb]}];
-        undefined ->
-            [];
-        Other ->
-            ?DBG({invalid_dbinfo, Other}),
-            []              
-    end;
 
 
 start(pgsql, Conf) ->
@@ -84,7 +71,16 @@ start(pgsql, Conf) ->
         PgStartup ->
             PgName = ?CONFNAME(Conf, "pgsql"),
             [{PgName, {evoepgsql, start_link, [PgName|PgStartup]},
-             permanent,5000,worker,[pgsql_connection]}]
+             permanent,5000,worker,[evoepgsql]}]
+    end;
+
+start(amqp, Conf) ->
+    case ?GV(amqp, Conf) of
+        undefined -> [];
+        AMQPStartup ->
+            AMQPName = ?CONFNAME(Conf, "amqp"),
+            [{AMQPName, {evoamqp, start_link, [AMQPName|AMQPStartup]},
+              permanent,2000,worker,[evoamqp]}]
     end;
 
 
@@ -99,8 +95,3 @@ make_loop(Conf) ->
     fun(Req) -> evosite:respond(Req, Conf) end.
 
 
-
-%start_epgsql(Name, Host, User, Pass, Opts) ->
-%    {ok, C} = gen_fsm:start_link({local, Name}, pgsql_connection, [], []),
-%    pgsql_connection:connect(C, Host, User, Pass, Opts),
-%    {ok, C}.
