@@ -33,8 +33,9 @@
 %%====================================================================
 
 start_link(Name, Host, Port, User, Password, Realm, Exchange) ->
-    gen_server:start_link({local, Name}, ?MODULE, [Host, Port, User, Password, Realm, Exchange], []).
-
+    gen_server:start_link({local, Name}, ?MODULE, 
+                          [Host, Port, User, Password, Realm, Exchange], 
+                          []).
 
 
 %%====================================================================
@@ -79,8 +80,10 @@ init([Host, Port, User, Password, Realm, Exchange]) ->
        exchange=Exchange}}.
 
 
+handle_call({listen, Queue}, {Pid, _}=From, State) ->
+    handle_call({listen, Queue, Pid}, From, State);
 
-handle_call({listen, Queue}, {From, _}, State) ->
+handle_call({listen, Queue, RoutingKey, Pid}, _From, State) ->
 
     QueueDeclare = #'queue.declare'{ticket = State#state.ticket, 
                                     queue = Queue,
@@ -98,23 +101,30 @@ handle_call({listen, Queue}, {From, _}, State) ->
     QueueBind = #'queue.bind'{ticket = State#state.ticket,
                               queue = Queue,
                               exchange = State#state.exchange,
-                              routing_key = Queue,
+                              routing_key = RoutingKey,
                               nowait = false, 
                               arguments = []},
     #'queue.bind_ok'{} 
         = amqp_channel:call(State#state.channel, QueueBind),
 
-
     BasicConsume = #'basic.consume'{ticket = State#state.ticket,
                                     queue = Queue,
-                                    consumer_tag = <<"">>,
+                                    consumer_tag = Queue,
                                     no_local = false,
                                     no_ack = true,
                                     exclusive = false,
                                     nowait = false},
     #'basic.consume_ok'{consumer_tag = _ConsumerTag}
-        = amqp_channel:subscribe(State#state.channel, BasicConsume, From),
+        = amqp_channel:subscribe(State#state.channel, BasicConsume, Pid),
 
+    {reply, ok, State};
+
+handle_call({unlisten, ConsumerTag}, _From, State) ->
+    BasicCancel = #'basic.cancel'{consumer_tag = ConsumerTag,
+                                  nowait = false},
+    #'basic.cancel_ok'{consumer_tag = ConsumerTag}
+        = amqp_channel:call(State#state.channel, BasicCancel),
+    
     {reply, ok, State};
 
 
