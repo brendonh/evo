@@ -14,6 +14,12 @@
         [$/|string:join([Component|Path],"/")]).
 
 
+%% Mnesia
+
+-record(session, {id, session=[]}).
+-record(comet_proc, {id, proc}).
+
+
 %% Sites
 
 -record(site, {

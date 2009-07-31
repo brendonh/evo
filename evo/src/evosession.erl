@@ -23,15 +23,16 @@
 %%%-------------------------------------------------------------------
 
 user_info(Conf) ->
-    {_, Session} = ?GVD(session, Conf, []),
-    ?GVD(userInfo, Session, []).
+    Session = ?GVD(session, Conf, []),
+    RV = ?GVD(userInfo, Session#session.session, []),
+    RV.
 
 
 save_session(Conf) ->
-    {Key, RawSession} = ?GV(session, Conf),
-    Session = lists:usort([{K,V} || {K,V} <- RawSession, is_binary(K)]),
-    {CouchDB, DB} = ?GV(couchdb, Conf),
-    erlang_couchdb:update_document(CouchDB, DB, binary_to_list(Key), Session).
+    Session = ?GV(session, Conf),
+    SessionPL = lists:usort([{K,V} || {K,V} <- Session#session.session, is_binary(K)]),
+    mnesia:transaction(
+      fun() -> mnesia:write(Session#session{session=SessionPL}) end).
 
 
 nav(_Conf, _Args) -> [].
@@ -49,12 +50,12 @@ login(Username, GivenPass, Conf) ->
     
     case Valid of
         true ->
-            {Key, OldSession} = ?GV(session, Conf),
+            OldSession = ?GV(session, Conf),
             UserID = ?GV(<<"_id">>, User),
-            NewSession = [{<<"userID">>, UserID},
+            NewSessionPL = [{<<"userID">>, UserID},
                           {userInfo, get_user(UserID, Conf)}
-                          |OldSession],
-            NewConf = [{session, {Key, NewSession}}|Conf],
+                          |OldSession#session.session],
+            NewConf = [{session, OldSession#session{session=NewSessionPL}}|Conf],
             save_session(NewConf),
             {ok, NewConf};
         false ->
@@ -108,31 +109,24 @@ respond(Req, 'POST', [], Conf, Args) ->
 
 
 respond(Req, 'GET', ["logout"], Conf, _Args) ->
-    {Key, Session} = ?GVD(session, Conf, []),
+    Session = ?GVD(session, Conf, []),
 
-    NewSession = [{K,V} || {K,V} <- Session,
+    NewSession = [{K,V} || {K,V} <- Session#session.session,
                            K /= <<"userID">>,
                            K /= userInfo],
 
-    NewConf = [{session, {Key, NewSession}}|Conf],
+    NewConf = [{session, Session#session{session=NewSession}}|Conf],
 
     save_session(NewConf),
 
     redirect(Req, NewConf);
 
 
-%% XXX Debug
-respond(_Req, 'GET', ["_clear"], Conf, _Args) ->
-    {CouchDB, DB} = ?GV(couchdb, Conf),
-    {json, RawSessions} = erlang_couchdb:invoke_view(CouchDB, DB, "users", "sessions", []),
-    Sessions = [{?GV(<<"id">>, S), ?GV(<<"value">>, S)} || {struct, S} 
-                <- erlang_couchdb:get_value(<<"rows">>, RawSessions)],
-    erlang_couchdb:delete_documents(CouchDB, DB, Sessions),
-    {wrap, site, [{content, ["Alright."] }, {title, "Hey"}]};
-
 
 respond(Req, _Method, always, Conf, _Args) ->
-    session_from_cookie(Req, Conf, Req:get(path));
+    {atomic, RV} = mnesia:transaction(
+                     fun() -> session_from_cookie(Req, Conf, Req:get(path)) end),
+    RV;
 
 
 respond(Req, _, _, _Conf, _Args) ->
@@ -170,27 +164,27 @@ redirect(Req, Conf) ->
 
 
 session_from_cookie(_Req, Conf, "/static/" ++ _) ->
-    %% Don't bother hitting CouchDB for static files
+    %% Don't bother hitting the DB for static files
     {update, Conf};
 session_from_cookie(Req, Conf, _) ->
     CookieName = lists:concat(["evo_session_", ?SITENAME(Conf)]),
 
-    {Key, DBSession} = case Req:get_cookie_value(CookieName) of
-                           undefined -> create_session(Conf);
-                           Existing -> retrieve_session(Existing, Conf)
-                       end,
-
-    UserID = ?GV(<<"userID">>, DBSession),
-    
-    Session = case UserID of
-                  undefined -> DBSession;
-                  _ -> [{userInfo, get_user(UserID, Conf)}|DBSession]
+    Session = case Req:get_cookie_value(CookieName) of
+                  undefined -> create_session();
+                  Existing -> retrieve_session(Existing)
               end,
 
-    OldHeaders = ?GVD(headers, Conf, []),
-    NewHeader = mochiweb_cookies:cookie(CookieName, Key, [{path, "/"}]),
+    UserID = ?GV(<<"userID">>, Session#session.session),
+    
+    SessionPL = case UserID of
+                    undefined -> Session#session.session;
+                    _ -> [{userInfo, get_user(UserID, Conf)}|Session#session.session]
+                end,
 
-    {update, [{session, {Key, Session}},
+    OldHeaders = ?GVD(headers, Conf, []),
+    NewHeader = mochiweb_cookies:cookie(CookieName, Session#session.id, [{path, "/"}]),
+
+    {update, [{session, Session#session{session=SessionPL}},
               {headers, [NewHeader|OldHeaders]}
               |Conf]}.
 
@@ -202,23 +196,17 @@ get_user(UserID, Conf) ->
     User.
 
 
-create_session(Conf) ->
-    {CouchDB, DB} = ?GV(couchdb, Conf),
-    {json, {struct, Response}} = erlang_couchdb:create_document(
-        CouchDB, DB, [{<<"type">>, <<"session">>}]),
-
-    case ?GV(<<"error">>, Response) of
-        undefined ->
-            {?GV(<<"id">>, Response), []};
-        _Error -> throw({'EXIT', couldnt_create_session})
-    end.
+create_session() ->
+    Key = uuid:to_string(uuid:srandom()),
+    Session = #session{id=Key, session=[]},
+    mnesia:write(Session),
+    Session.
 
 
-retrieve_session(Name, Conf) ->
-    {CouchDB, DB} = ?GV(couchdb, Conf),
-    {json, {struct, Session}} = erlang_couchdb:retrieve_document(CouchDB, DB, Name),
-    Key = ?GVD(<<"_id">>, Session, undefined),
-    case Key of
-        undefined -> create_session(Conf);
-        _ -> {Key, Session}
+retrieve_session(Key) ->
+    Sessions = mnesia:read(session, Key),
+    case Sessions of
+        [Session] -> Session;
+        [] -> create_session();
+        Other -> throw({'EXIT', multiple_session_matches, Other})
     end.

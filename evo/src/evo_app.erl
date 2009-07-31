@@ -30,8 +30,19 @@ launch() ->
 %% Application callbacks
 %%====================================================================
 start(_Type, _StartArgs) ->
-    ?DBG("Evo starting up"),
-    evo_sup:start_link().
+    ?DBG(evo_starting),
+
+    mnesia:start(),
+    ?DBG(waiting_for_mnesia_tables),
+    case mnesia:wait_for_tables([session, comet_proc], 5000) of
+        ok -> 
+            ?DBG(got_tables),
+            evo_sup:start_link();
+        Other ->
+            ?DBG({oh_noes, Other}),
+            none
+    end.
+            
 
 stop(_State) ->
     ok.
