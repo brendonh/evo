@@ -119,14 +119,14 @@ handle_call({listen, Queue, RoutingKey, Pid}, _From, State) ->
 
     {reply, ok, State};
 
-handle_call({unlisten, ConsumerTag}, _From, State) ->
-    BasicCancel = #'basic.cancel'{consumer_tag = ConsumerTag,
-                                  nowait = false},
-    #'basic.cancel_ok'{consumer_tag = ConsumerTag}
-        = amqp_channel:call(State#state.channel, BasicCancel),
+handle_call({unlisten, Queue}, _From, State) ->
+
+    QueueDelete = #'queue.delete'{ticket = State#state.ticket,
+                                  queue = Queue},
+    #'queue.delete_ok'{}
+        = amqp_channel:call(State#state.channel, QueueDelete),
     
     {reply, ok, State};
-
 
 handle_call(Message, _From, State) ->
     ?DBG({unexpected_call, Message}),

@@ -16,6 +16,7 @@
 -export([respond/5, nav/2]).
 
 -define(LONGPOLL_TIMEOUT, 10000).
+-define(DEFUNCT_TIMEOUT, 11000).
 -define(SESSION_TIMEOUT, 31000).
 
 nav(_Conf, _Args) -> [].
@@ -25,7 +26,9 @@ nav(_Conf, _Args) -> [].
   listener=none,
   buffer=[],
   timer=none,
-  listen_timer=none
+  listen_timer=none,
+  queues=[],
+  amqp
 }).
 
 
@@ -38,9 +41,12 @@ respond(Req, 'GET', ["ping"], Conf, _Args) ->
     {response, Req:ok({"text/plain", "Ping started"})};
 
 respond(Req, 'GET', [], Conf, _Args) ->
+    ?DBG(sup),
     Session = ?GVD(session, Conf, []),
     ID = Session#session.id,
-    {atomic, Proc} = mnesia:transaction(fun() -> get_proc(ID) end),
+    AMQP = ?CONFNAME(Conf, "amqp"),
+
+    {atomic, Proc} = mnesia:transaction(fun() -> get_proc(ID, AMQP) end),
 
     QS = mochiweb_request:parse_qs(Req),
     case ?GV("key", QS) of
@@ -48,13 +54,13 @@ respond(Req, 'GET', [], Conf, _Args) ->
         StrKey ->
             QueueName = list_to_binary(uuid:to_string(uuid:srandom())),
             Key = list_to_binary(StrKey),
-            AMQP = ?CONFNAME(Conf, "amqp"),
             ok = gen_server:call(AMQP, {listen, QueueName, Key, Proc})
     end,
 
     Proc ! {listener, self()},
     Messages = receive
         {Proc, Ms} -> Ms
+    after ?DEFUNCT_TIMEOUT -> []
     end,
 
     ?DBG({messages, Messages}),
@@ -64,24 +70,24 @@ respond(Req, 'GET', [], Conf, _Args) ->
 
 
 
-get_proc(ID) ->
+get_proc(ID, AMQP) ->
     Procs = mnesia:read(comet_proc, ID),
     case Procs of
         [Proc] -> 
             Pid = Proc#comet_proc.proc,
             case is_process_alive(Pid) of
                 true -> Pid;
-                false -> create_comet_process(ID)
+                false -> create_comet_process(ID, AMQP)
             end;
         [] -> 
-            create_comet_process(ID);
+            create_comet_process(ID, AMQP);
         Other ->
             throw({'EXIT', multple_comet_procs, Other})
     end.
 
 
-create_comet_process(ID) ->
-    Pid = spawn(fun() -> comet_loop(#state{}) end),
+create_comet_process(ID, AMQP) ->
+    Pid = spawn(fun() -> comet_loop(#state{amqp=AMQP}) end),
     ok = mnesia:write(#comet_proc{id=ID, proc=Pid}),
     Pid.
 
@@ -111,8 +117,8 @@ comet_loop(State) ->
             replace_comet_listener(State#state{timer=SessionTRef, listen_timer=ListenTRef}, 
                                    MochiProc);
 
-        #'basic.consume_ok'{} ->
-            comet_loop(State);
+        #'basic.consume_ok'{consumer_tag=ConsumerTag} ->
+            comet_loop(State#state{queues=[ConsumerTag|State#state.queues]});
 
         {#'basic.deliver'{consumer_tag=Tag, routing_key=Key}, 
          #content{payload_fragments_rev = [Payload]}} ->
@@ -129,6 +135,8 @@ comet_loop(State) ->
 
         session_timeout ->
             ?DBG(session_timed_out),
+            AMQP = State#state.amqp,
+            [gen_server:call(AMQP, {unlisten, Q}) || Q <- State#state.queues],
             ok;
 
         Other ->
