@@ -40,19 +40,24 @@ respond(Req, 'GET', ["ping"], Conf, _Args) ->
           end),
     {response, Req:ok({"text/plain", "Ping started"})};
 
+
+respond(Req, 'GET', ["id"], _Conf, _Args) ->
+    Response = uuid:to_string(uuid:srandom()),
+    {response, Req:ok({"text/plain", [$", Response, $"]})};
+
+
 respond(Req, 'GET', [], Conf, _Args) ->
-    ?DBG(sup),
-    Session = ?GVD(session, Conf, []),
-    ID = Session#session.id,
+    QS = mochiweb_request:parse_qs(Req),
     AMQP = ?CONFNAME(Conf, "amqp"),
+
+    ID = ?GV("id", QS),
 
     {atomic, Proc} = mnesia:transaction(fun() -> get_proc(ID, AMQP) end),
 
-    QS = mochiweb_request:parse_qs(Req),
     case ?GV("key", QS) of
         undefined -> ok;
         StrKey ->
-            QueueName = list_to_binary(uuid:to_string(uuid:srandom())),
+            QueueName = list_to_binary(?GV("queue", QS)),
             Key = list_to_binary(StrKey),
             ok = gen_server:call(AMQP, {listen, QueueName, Key, Proc})
     end,
@@ -62,8 +67,6 @@ respond(Req, 'GET', [], Conf, _Args) ->
         {Proc, Ms} -> Ms
     after ?DEFUNCT_TIMEOUT -> []
     end,
-
-    ?DBG({messages, Messages}),
 
     JSON = mochijson2:encode(Messages),
     {response, Req:ok({"text/plain", JSON})}.
@@ -95,7 +98,7 @@ create_comet_process(ID, AMQP) ->
 
 ping(AMQP, X) ->
     receive
-    after 5000 ->
+    after 2000 ->
             Message = list_to_binary("PING " ++ integer_to_list(X)),
             ?DBG({ping, Message}),
             gen_server:cast(AMQP, {send, <<"ping">>, Message})
