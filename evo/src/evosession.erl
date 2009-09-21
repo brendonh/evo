@@ -8,6 +8,7 @@
 -module(evosession).
 
 -include("evo.hrl").
+-include("openid.hrl").
 
 %% Evo component callbacks
 -export([respond/5, nav/2]).
@@ -37,17 +38,15 @@ save_session(Conf) ->
 
 nav(_Conf, _Args) -> [].
 
-
-
 login(Username, GivenPass, Conf) ->
     {CouchDB, DB} = ?GV(couchdb, Conf),
-    {json, Users} = erlang_couchdb:invoke_view(CouchDB, DB, "users", "byUsername", 
+    {json, Users} = erlang_couchdb:invoke_view(CouchDB, DB, "users", "byUsername",
                                                [{include_docs, true}, {key, ?Q(Username)}]),
     {Valid, User} = case erlang_couchdb:get_value([<<"rows">>, <<"doc">>], Users) of
                         [] -> {false, none};
                         [{struct, U}] -> check_creds(U, GivenPass)
                     end,
-    
+
     case Valid of
         true ->
             OldSession = ?GV(session, Conf),
@@ -68,7 +67,7 @@ login(Username, GivenPass, Conf) ->
 %%% Login / logout Evo pages
 %%%-------------------------------------------------------------------
 
--define(Template(C, T, D, Cf), 
+-define(Template(C, T, D, Cf),
         gen_server:call(?CONFNAME(Conf, "evotemplate"),
                         {C,T,D,Cf,State#state.templateCallback})).
 
@@ -82,31 +81,59 @@ respond(Req, 'GET', [], Conf, _Args) ->
                            [] -> {login, ""};
                            User -> {loggedin, ?GV(<<"name">>, User)}
                        end,
-    
+
     Data = [{error, ?GVD(error, Conf, "")},
             {name, Name}],
 
     {ok, Content} = gen_server:call(?CONFNAME(Conf, "evotemplate"),
                                     {run, {reload, Template}, Data, [], fun template/1}),
 
-
     {response, Req:ok({"text/html", Content})};
 
 
-respond(Req, 'POST', [], Conf, Args) ->
+respond(Req, 'POST', ["openid", "prepare"], Conf, _Args) ->
     case user_info(Conf) of
         [] ->
-            Creds = mochiweb_multipart:parse_form(Req),
-            Username = ?GV("username", Creds),
-            GivenPass = ?GV("password", Creds),
+            Creds = Req:parse_post(),
+            Identifier = ?GV("openid_identifier", Creds),
 
-            case login(Username, GivenPass, Conf) of
-                {ok, NewConf} -> redirect(Req, NewConf);
-                {error, _} -> respond(Req, 'GET', [], [{error, "Invalid credentials"}|Conf], Args)
-            end;
+            %?DBG({identifier, Identifier}),
+
+            Session = ?GV(session, Conf),
+            SessionID = Session#session.id,
+
+            %?DBG({id, SessionID}),
+
+            case gen_server:call(?CONFNAME(Conf, "openid"),
+                                 {prepare, SessionID, Identifier, true}) of
+
+                {ok, AuthReq} ->
+
+                    BaseURL = ?GV(base, Conf),
+                    
+                    ReturnTo = list_to_binary([BaseURL, "session/openid/return"]), 
+                    Realm = BaseURL,
+
+                    AuthURL = openid:authentication_url(AuthReq, ReturnTo, Realm),
+                    Response = {struct, [{success, 1}, {url, AuthURL}]};
+
+                {error, Error} ->
+                    ErrorStr = list_to_binary(io_lib:format("~p", [Error])),
+                    Response = {struct, [{success, 0},
+                                         {error, ErrorStr}]}
+                    
+            end,
+
+            JSON = mochijson2:encode(Response),
+            {response, Req:ok({"text/plain", JSON})};
+
         _ -> redirect(Req, Conf)
     end;
 
+respond(Req, 'GET', ["openid", "return"], Conf, Args) ->
+    handle_openid_return(Req, Req:parse_qs(), Conf, Args);
+respond(Req, 'POST', ["openid", "return"], Conf, Args) ->
+    handle_openid_return(Req, Req:parse_post(), Conf, Args);
 
 respond(Req, 'GET', ["logout"], Conf, _Args) ->
     Session = ?GVD(session, Conf, []),
@@ -129,10 +156,11 @@ respond(Req, _Method, always, Conf, _Args) ->
     RV;
 
 
-respond(Req, _, _, _Conf, _Args) ->
+respond(Req, Method, Path, _Conf, _Args) ->
+    ?DBG({not_found, Method, Path}),
     {response, Req:not_found()}.
 
-   
+
 check_creds(User, GivenPass) ->
     {struct, UNPW} = ?GV(<<"unpw">>, User),
     RealPass = ?GV(<<"password">>, UNPW),
@@ -153,9 +181,31 @@ hashfunc(<<"sha512">>) -> fun sha2:hexdigest512/1.
 
 % XXX Todo
 redirect(Req, Conf) ->
-    {response, Req:respond({302, [{"Location", ?GVD(default, Conf, "/default")}], 
+    {response, Req:respond({302, [{"Location", ?GVD(default, Conf, "/default")}],
                             "Redirecting..."})}.
 
+
+
+%%%-------------------------------------------------------------------
+%%% OpenID
+%%%-------------------------------------------------------------------
+
+handle_openid_return(Req, Form, Conf, _Args) ->
+    Session = ?GV(session, Conf),
+    SessionID = Session#session.id,
+
+    BaseURL = ?GV(base, Conf),
+    ReturnTo = lists:flatten([BaseURL, "session/openid/return"]), 
+    
+    case gen_server:call(?CONFNAME(Conf, "openid"),
+                         {verify, SessionID, ReturnTo, Form}) of
+        {ok, ID} -> 
+            Message = list_to_binary(["Alright: ", ID]);
+        {error, Error} ->
+            Message = list_to_binary(["Failed: ", io_lib:format("~p", [Error])])
+    end,
+
+    {response, Req:ok({"text/plain", Message})}.
 
 
 %%%-------------------------------------------------------------------
@@ -175,7 +225,7 @@ session_from_cookie(Req, Conf, _) ->
               end,
 
     UserID = ?GV(<<"userID">>, Session#session.session),
-    
+
     SessionPL = case UserID of
                     undefined -> Session#session.session;
                     _ -> [{userInfo, get_user(UserID, Conf)}|Session#session.session]

@@ -156,3 +156,7 @@ li {
 .pageLinks a:hover {
   text-decoration: underline;
 }
+
+#openidStatus {
+  color: #090;
+}

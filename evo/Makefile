@@ -4,19 +4,21 @@ SRC_DIR = src
 EBIN_DIR = ebin
 INCLUDE_DIR = include
 
-MOCHIWEB_EBIN = ../mochiweb/ebin
-COMETD_EBIN = ../cometd/ebin
-COUCHDB_EBIN = ../../lib/erlang_couchdb/ebin
+MOCHIWEB_EBIN = ../../mochiweb/ebin
+COMETD_EBIN = ../../cometd/ebin
+COUCHDB_EBIN = ../../../lib/erlang_couchdb/ebin
+OPENID_EBIN = ../../erl_openid/ebin
 
 SOURCES  = $(wildcard $(SRC_DIR)/*.erl)
 INCLUDES = $(wildcard $(INCLUDE_DIR)/*.hrl)
 TARGETS  = $(patsubst $(SRC_DIR)/%.erl, $(EBIN_DIR)/%.beam,$(SOURCES))
 
 RABBITMQ_INCLUDE = /usr/local/share/rabbitmq/include
+OPENID_INCLUDE = ../../erl_openid/src
 
-ERLC_INCLUDES = -I $(INCLUDE_DIR) -I $(RABBITMQ_INCLUDE)
+ERLC_INCLUDES = -I $(INCLUDE_DIR) -I $(RABBITMQ_INCLUDE) -I $(OPENID_INCLUDE)
 ERL_EBINS = -pa $(EBIN_DIR) \
-            -pa $(MOCHIWEB_EBIN) -pa $(COMETD_EBIN) -pa $(COUCHDB_EBIN)
+            -pa $(MOCHIWEB_EBIN) -pa $(COMETD_EBIN) -pa $(COUCHDB_EBIN) -pa $(OPENID_EBIN)
 
 ERLC = erlc
 ERLC_OPTS = $(ERLC_INCLUDES) -o $(EBIN_DIR) -Wall -v +debug_info

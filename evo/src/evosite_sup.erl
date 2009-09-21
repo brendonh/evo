@@ -38,7 +38,7 @@ init([Conf]) ->
     Bits = lists:concat(
              lists:map(
                fun (B) -> start(B, Conf) end,
-               [mochiweb, pgsql, amqp, evotemplate])),
+               [mochiweb, openid, pgsql, amqp, evotemplate])),
 
     {ok,{{one_for_one,2,60}, Bits}}.
 
@@ -56,6 +56,13 @@ start(mochiweb, Conf) ->
                     {port, Port}, 
                     {loop, make_loop(Conf)}]]},
       permanent,2000,worker,[mochiweb_socket_server]}];
+
+
+start(openid, Conf) ->
+    OpenIDName = ?CONFNAME(Conf, "openid"),
+    [{OpenIDName, {openid_srv, start_link, [OpenIDName]},
+      permanent,2000,worker,[openid_srv]}];
+
 
 start(cometd, Conf) ->
     application:load(cometd),
