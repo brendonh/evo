@@ -137,7 +137,6 @@ comet_loop(State) ->
             end;
 
         session_timeout ->
-            ?DBG(session_timed_out),
             AMQP = State#state.amqp,
             [gen_server:call(AMQP, {unlisten, Q}) || Q <- State#state.queues],
             ok;

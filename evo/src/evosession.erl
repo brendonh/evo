@@ -146,9 +146,9 @@ check_creds(User, GivenPass) ->
 hashfunc(<<"plaintext">>) -> fun(P) -> P end;
 hashfunc(<<"md5">>) -> fun evoutil:md5_hex/1;
 hashfunc(<<"sha224">>) -> fun sha2:hexdigest224/1;
-hashfunc(<<"sha256">>) -> fun sha2:hexdigest224/1;
-hashfunc(<<"sha384">>) -> fun sha2:hexdigest224/1;
-hashfunc(<<"sha512">>) -> fun sha2:hexdigest224/1.
+hashfunc(<<"sha256">>) -> fun sha2:hexdigest256/1;
+hashfunc(<<"sha384">>) -> fun sha2:hexdigest384/1;
+hashfunc(<<"sha512">>) -> fun sha2:hexdigest512/1.
 
 
 % XXX Todo
