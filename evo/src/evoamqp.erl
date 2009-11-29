@@ -67,9 +67,7 @@ init([Host, Port, User, Password, Realm, Exchange]) ->
                                           nowait = false,
                                           arguments = []},
     #'exchange.declare_ok'{} 
-        = amqp_channel:call(Channel, ExchangeDeclare),
-
-    
+        = amqp_channel:call(Channel, ExchangeDeclare),    
 
     ?DBG({amqp_connected, Realm, Exchange}),
 
