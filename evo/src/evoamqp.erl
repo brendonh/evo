@@ -88,7 +88,7 @@ handle_call({listen, Queue, RoutingKey, Pid}, _From, State) ->
                                     passive = false, 
                                     durable = false,
                                     exclusive = false,
-                                    auto_delete = false,
+                                    auto_delete = true,
                                     nowait = false,
                                     arguments = []},
     #'queue.declare_ok'{queue = Queue,
@@ -107,7 +107,6 @@ handle_call({listen, Queue, RoutingKey, Pid}, _From, State) ->
 
     BasicConsume = #'basic.consume'{ticket = State#state.ticket,
                                     queue = Queue,
-                                    consumer_tag = Queue,
                                     no_local = false,
                                     no_ack = true,
                                     exclusive = false,
@@ -156,7 +155,9 @@ handle_info(_Info, State) ->
 
 
 
-terminate(_Reason, State) ->
+terminate(Reason, State) ->
+
+    ?DBG({wtf, Reason}),
 
     ChannelClose 
         = #'channel.close'{reply_code = 200,

@@ -13,7 +13,7 @@
 
 
 %% Evo component callbacks
--export([respond/5, nav/2, update_message_filter/3]).
+-export([respond/5, nav/2, update_message_filter/3, subscribe_queue/3]).
 
 -define(LONGPOLL_TIMEOUT, 10000).
 -define(DEFUNCT_TIMEOUT, 11000).
@@ -59,20 +59,19 @@ respond(Req, 'GET', [], Conf, Args) ->
     case ?GV("key", QS) of
         undefined -> ok;
         StrKey ->
-            StrQueueName = ?GV("queue", QS),            
             Filter = get_filter(queue, Args),
             Allowed = case Filter of
                           none -> true;
-                          {M,F} -> apply(M, F, [StrQueueName, StrKey])
+                          {M,F} -> apply(M, F, [StrKey])
                       end,
             
             case Allowed of        
                 true ->
-                    QueueName = list_to_binary(StrQueueName),
                     Key = list_to_binary(StrKey),
+                    QueueName = list_to_binary([Key, ID]),
                     ok = gen_server:call(AMQP, {listen, QueueName, Key, Proc});
                 _ ->
-                    ?DBG({queue_denied, StrKey, StrQueueName, Filter})
+                    ?DBG({queue_denied, StrKey, Filter})
             end
     end,
 
@@ -89,6 +88,11 @@ respond(Req, 'GET', [], Conf, Args) ->
 update_message_filter(ID, AMQP, NewFilter) ->
     {atomic, Proc} = mnesia:transaction(fun() -> get_proc(ID, AMQP, []) end),
     Proc ! {newfilter, NewFilter}.
+
+subscribe_queue(ID, AMQP, Key) ->
+    {atomic, Proc} = mnesia:transaction(fun() -> get_proc(ID, AMQP, []) end),
+    QueueName = list_to_binary([Key, ID]),
+    ok = gen_server:call(AMQP, {listen, QueueName, Key, Proc}).
 
 
 % Internal
@@ -172,8 +176,6 @@ comet_loop(State) ->
             end;
 
         session_timeout ->
-            AMQP = State#state.amqp,
-            [gen_server:call(AMQP, {unlisten, Q}) || Q <- State#state.queues],
             ok;
 
         Other ->
@@ -202,7 +204,7 @@ replace_comet_listener(#state{listener=OldMochiProc, buffer=Buffer}=State, NewMo
 
 handle_amqp_message(#state{filter=none}=State, Message) ->
     send_amqp_message(State, Message);
-handle_amqp_message(#state{filter=Filter}=State, {Tag, Key, Payload}=Message) ->
+handle_amqp_message(#state{filter=Filter}=State, {_Tag, Key, Payload}=Message) ->
     case Filter(Key, Payload) of
         true -> send_amqp_message(State, Message);
         _ -> comet_loop(State)
