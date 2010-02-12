@@ -53,36 +53,47 @@ respond(Req, 'GET', [], Conf, Args) ->
     AMQP = ?CONFNAME(Conf, "amqp"),
 
     ID = ?GV("id", QS),
+    AutoVivify = case ?GV("noauto", QS) of
+                     undefined -> true;
+                     _ -> false
+                 end,
 
-    {atomic, Proc} = mnesia:transaction(fun() -> get_proc(ID, AMQP, Args) end),
+    {atomic, Proc} = mnesia:transaction(fun() -> get_proc(ID, AMQP, Args, AutoVivify) end),
 
-    case ?GV("key", QS) of
-        undefined -> ok;
-        StrKey ->
-            Filter = get_filter(queue, Args),
-            Allowed = case Filter of
-                          none -> true;
-                          {M,F} -> apply(M, F, [StrKey])
-                      end,
+    case Proc of
+        none ->  
+            JSON = mochijson2:encode([{struct, [{"type", <<"error">>},
+                                                {"reason", <<"Session doesn't exist">>}]}]),
+            {response, Req:ok({"text/plain", JSON})};
+        _ ->
+            case ?GV("key", QS) of
+                undefined -> ok;
+                StrKey ->
+                    Filter = get_filter(queue, Args),
+                    Allowed = case Filter of
+                                  none -> true;
+                                  {M,F} -> apply(M, F, [StrKey])
+                              end,
+                    
+                    case Allowed of        
+                        true ->
+                            Key = list_to_binary(StrKey),
+                            QueueName = list_to_binary([Key, ID]),
+                            ok = gen_server:call(AMQP, {listen, QueueName, Key, Proc});
+                        _ ->
+                            ?DBG({queue_denied, StrKey, Filter})
+                    end
+            end,
             
-            case Allowed of        
-                true ->
-                    Key = list_to_binary(StrKey),
-                    QueueName = list_to_binary([Key, ID]),
-                    ok = gen_server:call(AMQP, {listen, QueueName, Key, Proc});
-                _ ->
-                    ?DBG({queue_denied, StrKey, Filter})
-            end
-    end,
+            Proc ! {listener, self()},
+            Messages = receive
+                           {Proc, Ms} -> Ms
+                       after ?DEFUNCT_TIMEOUT -> []
+                       end,
+            JSON = mochijson2:encode(Messages),
+            {response, Req:ok({"text/plain", JSON})}
 
-    Proc ! {listener, self()},
-    Messages = receive
-        {Proc, Ms} -> Ms
-    after ?DEFUNCT_TIMEOUT -> []
-    end,
-
-    JSON = mochijson2:encode(Messages),
-    {response, Req:ok({"text/plain", JSON})}.
+    end.
 
 
 update_message_filter(ID, AMQP, NewFilter) ->
@@ -100,26 +111,31 @@ subscribe_queue(ID, AMQP, Key) ->
 
 
 get_proc(ID, AMQP, Args) ->
+    get_proc(ID, AMQP, Args, true).
+
+get_proc(ID, AMQP, Args, AutoVivify) ->
     Procs = mnesia:read(comet_proc, ID),
     case Procs of
         [Proc] -> 
             Pid = Proc#comet_proc.proc,
             case is_process_alive(Pid) of
                 true -> Pid;
-                false -> create_comet_process(ID, AMQP, Args)
+                false -> create_comet_process(ID, AMQP, Args, AutoVivify)
             end;
         [] -> 
-            create_comet_process(ID, AMQP, Args);
+            create_comet_process(ID, AMQP, Args, AutoVivify);
         Other ->
             throw({'EXIT', multple_comet_procs, Other})
     end.
 
 
-create_comet_process(ID, AMQP, Args) ->
+create_comet_process(ID, AMQP, Args, true) ->
     Filter = get_filter(message, Args),
     Pid = spawn(fun() -> comet_loop(#state{amqp=AMQP, filter=Filter}) end),
     ok = mnesia:write(#comet_proc{id=ID, proc=Pid}),
-    Pid.
+    Pid;
+create_comet_process(_, _, _, false) ->
+    none.
 
 
 get_filter(FilterName, Args) ->
