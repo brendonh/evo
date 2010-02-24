@@ -10,8 +10,9 @@
 -behaviour(gen_server).
 
 -include("evo.hrl").
--include("rabbit.hrl").
--include("rabbit_framing.hrl").
+%-include("rabbit.hrl").
+%-include("rabbit_framing.hrl").
+-include("amqp_client.hrl").
 
 %% API
 -export([start_link/7]).
@@ -27,6 +28,11 @@
   exchange
 }).
 
+
+-define(BASIC_PROPERTIES, 
+        #'P_basic'{content_type = <<"application/octet-stream">>,
+                   delivery_mode = 1,
+                   priority = 0}).
 
 %%====================================================================
 %% API
@@ -44,7 +50,10 @@ start_link(Name, Host, Port, User, Password, Realm, Exchange) ->
 
 init([Host, Port, User, Password, Realm, Exchange]) ->
 
-    Connection = amqp_connection:start_network(User, Password, Host, Port),
+    Params = #amqp_params{username=User, password=Password,
+                          host=Host, port=Port},
+
+    Connection = amqp_connection:start_network(Params),
     Channel = amqp_connection:open_channel(Connection),
 
     Access = #'access.request'{realm = Realm,
@@ -137,10 +146,7 @@ handle_cast({send, Queue, Payload}, State) ->
                                     routing_key = Queue,
                                     mandatory = false,
                                     immediate = false},
-    Content = #content{class_id = 60,
-                       properties = amqp_util:basic_properties(),
-                       properties_bin = none,
-                       payload_fragments_rev = [Payload]},
+    Content = #amqp_msg{payload=Payload},
     amqp_channel:cast(State#state.channel, BasicPublish, Content),
     {noreply, State};
 
@@ -159,21 +165,9 @@ terminate(Reason, State) ->
 
     ?DBG({wtf, Reason}),
 
-    ChannelClose 
-        = #'channel.close'{reply_code = 200,
-                           reply_text = <<"Goodbye">>,
-                           class_id = 0, 
-                           method_id = 0},
-    #'channel.close_ok'{} 
-        = amqp_channel:call(State#state.channel, ChannelClose),
+    amqp_channel:close(State#state.channel),
 
-    ConnectionClose 
-        = #'connection.close'{reply_code = 200, 
-                              reply_text = <<"Goodbye">>,
-                              class_id = 0,
-                              method_id = 0},
-    #'connection.close_ok'{} 
-        = amqp_connection:close(State#state.connection, ConnectionClose),
+    amqp_connection:close(State#state.connection),
 
     ok.
 

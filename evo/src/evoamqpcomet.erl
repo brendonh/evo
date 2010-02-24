@@ -8,8 +8,7 @@
 -module(evoamqpcomet).
 
 -include("evo.hrl").
--include("rabbit.hrl").
--include("rabbit_framing.hrl").
+-include("amqp_client.hrl").
 
 
 %% Evo component callbacks
@@ -179,7 +178,7 @@ comet_loop(State) ->
             comet_loop(State#state{queues=[ConsumerTag|State#state.queues]});
 
         {#'basic.deliver'{consumer_tag=Tag, routing_key=Key}, 
-         #content{payload_fragments_rev = [Payload]}} ->
+         #amqp_msg{payload=Payload}} ->
             handle_amqp_message(State, {Tag, Key, Payload});
 
         {listen_timeout, Pid} ->
